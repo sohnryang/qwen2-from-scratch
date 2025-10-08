@@ -11,31 +11,38 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Add executable
-set(KERNEL_SRCS src/tensor.cc src/kernel.cu)
-add_executable(app src/main.cpp "${KERNEL_SRCS}")
-
-target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# Find CUDA and link to it
+# Find external packages
 find_package(CUDAToolkit REQUIRED)
-target_link_libraries(app PRIVATE CUDA::cudart)
-set_property(TARGET app PROPERTY CUDA_ARCHITECTURES 89)
+include(FetchContent)
 
 # GoogleTest
-include(FetchContent)
 FetchContent_Declare(
   googletest
   URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)
 FetchContent_MakeAvailable(googletest)
 
+# simdjson
+FetchContent_Declare(
+  simdjson
+  URL https://github.com/simdjson/simdjson/archive/refs/tags/v4.0.7.zip)
+FetchContent_MakeAvailable(simdjson)
+
+# Kernel library
+set(KERNEL_SRCS src/tensor.cc src/kernel.cu)
+add_library(libqwen2kern STATIC ${KERNEL_SRCS})
+target_include_directories(libqwen2kern
+                           PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(libqwen2kern PUBLIC CUDA::cudart)
+target_link_libraries(libqwen2kern PRIVATE simdjson)
+set_property(TARGET libqwen2kern PROPERTY CUDA_ARCHITECTURES 89)
+
+# Main executable
+add_executable(app src/main.cpp)
+target_link_libraries(app PRIVATE libqwen2kern)
+
+# Unit tests
 enable_testing()
-
-add_executable(unit_tests tests/kernel_test.cpp "${KERNEL_SRCS}")
-target_include_directories(unit_tests
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(unit_tests PRIVATE gtest_main CUDA::cudart)
-set_property(TARGET unit_tests PROPERTY CUDA_ARCHITECTURES 89)
-
+add_executable(unit_tests tests/kernel_test.cpp)
+target_link_libraries(unit_tests PRIVATE gtest_main libqwen2kern)
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
