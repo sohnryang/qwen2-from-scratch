@@ -19,6 +19,7 @@ target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Find CUDA and link to it
 find_package(CUDAToolkit REQUIRED)
 target_link_libraries(app PRIVATE CUDA::cudart)
+set_property(TARGET app PROPERTY CUDA_ARCHITECTURES 89)
 
 # GoogleTest
 include(FetchContent)
@@ -33,6 +34,7 @@ add_executable(unit_tests tests/kernel_test.cpp src/kernel.cu)
 target_include_directories(unit_tests
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(unit_tests PRIVATE gtest_main CUDA::cudart)
+set_property(TARGET unit_tests PROPERTY CUDA_ARCHITECTURES 89)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
