@@ -12,7 +12,8 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Add executable
-add_executable(app src/main.cpp src/kernel.cu)
+set(KERNEL_SRCS src/tensor.cc src/kernel.cu)
+add_executable(app src/main.cpp "${KERNEL_SRCS}")
 
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -30,7 +31,7 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-add_executable(unit_tests tests/kernel_test.cpp src/kernel.cu)
+add_executable(unit_tests tests/kernel_test.cpp "${KERNEL_SRCS}")
 target_include_directories(unit_tests
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(unit_tests PRIVATE gtest_main CUDA::cudart)
