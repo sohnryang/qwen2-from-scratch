@@ -22,7 +22,7 @@ struct Storage {
 };
 
 struct Tensor {
-  std::size_t shape[4];
-  std::size_t dimensions;
+  std::size_t shape[4] = {0};
+  std::size_t dimensions = 0;
   std::shared_ptr<Storage> storage;
 };
