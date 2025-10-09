@@ -36,10 +36,8 @@ Storage::Storage(std::size_t elems_) : elems(elems_) {
 
 Storage Storage::load_from_offset(const std::uint8_t *buf, std::size_t begin,
                                   std::size_t end) {
-  Storage loaded;
   const auto bytes = end - begin;
-  loaded.elems = bytes / sizeof(__nv_bfloat16);
-  CHECK_CUDA(cudaMalloc((void **)&loaded.data, bytes));
+  Storage loaded(bytes / sizeof(__nv_bfloat16));
   CHECK_CUDA(
       cudaMemcpy(loaded.data, buf + begin, bytes, cudaMemcpyHostToDevice));
   return loaded;
