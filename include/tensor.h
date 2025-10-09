@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <cuda_bf16.h>
 
@@ -23,6 +24,8 @@ struct Storage {
 
   static Storage load_from_offset(const std::uint8_t *buf, std::size_t begin,
                                   std::size_t end);
+
+  std::vector<__nv_bfloat16> to_host();
 };
 
 struct Tensor {

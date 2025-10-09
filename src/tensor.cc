@@ -13,10 +13,10 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <cuda_bf16.h>
 #include <simdjson.h>
-#include <vector>
 
 Storage::~Storage() { CHECK_CUDA(cudaFree(data)); }
 
@@ -43,6 +43,13 @@ Storage Storage::load_from_offset(const std::uint8_t *buf, std::size_t begin,
   CHECK_CUDA(
       cudaMemcpy(loaded.data, buf + begin, bytes, cudaMemcpyHostToDevice));
   return loaded;
+}
+
+std::vector<__nv_bfloat16> Storage::to_host() {
+  std::vector<__nv_bfloat16> host_data(elems);
+  CHECK_CUDA(cudaMemcpy(host_data.data(), data, elems * sizeof(__nv_bfloat16),
+                        cudaMemcpyDeviceToHost));
+  return host_data;
 }
 
 std::map<std::string, Tensor>
