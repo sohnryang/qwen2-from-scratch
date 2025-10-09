@@ -20,7 +20,7 @@ std::vector<__nv_bfloat16> get_tensor_data(const Tensor &tensor) {
 }
 
 TEST(TensorTest, LoadSafetensors) {
-  std::string filepath = std::string(TEST_DATA_DIR) + "/test.safetensors";
+  std::string filepath = std::string(TEST_DATA_DIR) + "/load_test.safetensors";
   auto tensors = load_from_safetensors(filepath);
 
   // Check for tensor existence
