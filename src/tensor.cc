@@ -2,6 +2,7 @@
 #include "cuda_utils.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <ios>
@@ -27,6 +28,10 @@ Storage::Storage(const Storage &other) : elems(other.elems) {
 Storage::Storage(Storage &&other) {
   std::swap(data, other.data);
   std::swap(elems, other.elems);
+}
+
+Storage::Storage(std::size_t elems_) : elems(elems_) {
+  CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(__nv_bfloat16)));
 }
 
 Storage Storage::load_from_offset(const std::uint8_t *buf, std::size_t begin,

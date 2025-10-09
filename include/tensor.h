@@ -19,6 +19,8 @@ struct Storage {
   Storage &operator=(const Storage &) = default;
   Storage &operator=(Storage &&) = default;
 
+  Storage(std::size_t elems_);
+
   static Storage load_from_offset(const std::uint8_t *buf, std::size_t begin,
                                   std::size_t end);
 };
