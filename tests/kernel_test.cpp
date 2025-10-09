@@ -18,7 +18,7 @@ TEST(KernelTest, Gemm) {
                     .dimensions = 2,
                     .storage = storage};
 
-  launch_gemm(actual_out, in_a, in_b, bias);
+  launch_gemm(actual_out, in_a, in_b, bias, 1.0);
 
   auto actual_host_data = actual_out.storage->to_host();
   auto expected_host_data = expected_out.storage->to_host();
