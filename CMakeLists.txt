@@ -42,7 +42,9 @@ target_link_libraries(app PRIVATE libqwen2kern)
 
 # Unit tests
 enable_testing()
-add_executable(unit_tests tests/kernel_test.cpp)
+add_executable(unit_tests tests/kernel_test.cpp tests/tensor_test.cc)
 target_link_libraries(unit_tests PRIVATE gtest_main libqwen2kern)
+target_compile_definitions(
+  unit_tests PRIVATE "TEST_DATA_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data\"")
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
