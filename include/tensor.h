@@ -2,7 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <string>
 
 #include <cuda_bf16.h>
 
@@ -26,3 +28,6 @@ struct Tensor {
   std::size_t dimensions = 0;
   std::shared_ptr<Storage> storage;
 };
+
+std::map<std::string, Tensor>
+load_from_safetensors(const std::string &filename);
