@@ -36,12 +36,12 @@ target_link_libraries(qwen2kern PRIVATE simdjson)
 set_property(TARGET qwen2kern PROPERTY CUDA_ARCHITECTURES 89)
 
 # Main executable
-add_executable(app src/main.cpp)
+add_executable(app src/main.cc)
 target_link_libraries(app PRIVATE qwen2kern)
 
 # Unit tests
 enable_testing()
-add_executable(unit_tests tests/kernel_test.cpp tests/tensor_test.cc
+add_executable(unit_tests tests/kernel_test.cc tests/tensor_test.cc
                           tests/layer_test.cc)
 target_link_libraries(unit_tests PRIVATE gtest_main qwen2kern)
 target_compile_definitions(
