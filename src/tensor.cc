@@ -23,13 +23,13 @@ Storage::~Storage() {
     CHECK_CUDA(cudaFree(data));
 }
 
-Storage::Storage(const Storage &other) : elems(other.elems) {
+Storage::Storage(const Storage &other) : elems{other.elems} {
   CHECK_CUDA(cudaMemcpy(data, other.data, sizeof(__nv_bfloat16) * other.elems,
                         cudaMemcpyDeviceToDevice));
 }
 
 Storage::Storage(Storage &&other) noexcept
-    : data(std::exchange(other.data, nullptr)), elems(other.elems) {}
+    : data{std::exchange(other.data, nullptr)}, elems{other.elems} {}
 
 Storage &Storage::operator=(const Storage &other) {
   return *this = Storage(other);
@@ -41,7 +41,7 @@ Storage &Storage::operator=(Storage &&other) noexcept {
   return *this;
 }
 
-Storage::Storage(std::size_t elems_) : elems(elems_) {
+Storage::Storage(std::size_t elems_) : elems{elems_} {
   CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(__nv_bfloat16)));
 }
 
