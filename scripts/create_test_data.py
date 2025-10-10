@@ -15,6 +15,7 @@ import os
 
 import torch
 from safetensors.torch import save_file
+from torch import nn
 
 
 def create_safetensors_test_file(data_dir: str):
@@ -46,6 +47,21 @@ def create_matmul_test_file(data_dir: str):
     )
 
 
+def create_dense_test_file(data_dir: str):
+    model = nn.Sequential(nn.Linear(2, 4, dtype=torch.bfloat16), nn.SiLU())
+    weight = torch.tensor([[0, 1], [2, 3], [4, 5], [6, 7]], dtype=torch.bfloat16)
+    bias = torch.tensor([0, 1, 2, 3], dtype=torch.bfloat16)
+    x = torch.tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], dtype=torch.bfloat16)
+    with torch.no_grad():
+        model[0].weight = nn.Parameter(weight)
+        model[0].bias = nn.Parameter(bias)
+        out = model(x)
+    save_file(
+        {"weight": weight, "bias": bias, "x": x, "out": out},
+        os.path.join(data_dir, "dense_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -53,3 +69,4 @@ if __name__ == "__main__":
 
     create_safetensors_test_file(parsed.data_dir)
     create_matmul_test_file(parsed.data_dir)
+    create_dense_test_file(parsed.data_dir)

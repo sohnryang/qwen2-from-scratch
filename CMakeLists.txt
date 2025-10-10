@@ -41,7 +41,8 @@ target_link_libraries(app PRIVATE qwen2kern)
 
 # Unit tests
 enable_testing()
-add_executable(unit_tests tests/kernel_test.cpp tests/tensor_test.cc)
+add_executable(unit_tests tests/kernel_test.cpp tests/tensor_test.cc
+                          tests/layer_test.cc)
 target_link_libraries(unit_tests PRIVATE gtest_main qwen2kern)
 target_compile_definitions(
   unit_tests PRIVATE "TEST_DATA_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data\"")
