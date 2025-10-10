@@ -29,21 +29,20 @@ FetchContent_MakeAvailable(simdjson)
 
 # Kernel library
 set(KERNEL_SRCS src/tensor.cc src/kernel.cu)
-add_library(libqwen2kern STATIC ${KERNEL_SRCS})
-target_include_directories(libqwen2kern
-                           PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(libqwen2kern PUBLIC CUDA::cudart)
-target_link_libraries(libqwen2kern PRIVATE simdjson)
-set_property(TARGET libqwen2kern PROPERTY CUDA_ARCHITECTURES 89)
+add_library(qwen2kern STATIC ${KERNEL_SRCS})
+target_include_directories(qwen2kern PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(qwen2kern PUBLIC CUDA::cudart)
+target_link_libraries(qwen2kern PRIVATE simdjson)
+set_property(TARGET qwen2kern PROPERTY CUDA_ARCHITECTURES 89)
 
 # Main executable
 add_executable(app src/main.cpp)
-target_link_libraries(app PRIVATE libqwen2kern)
+target_link_libraries(app PRIVATE qwen2kern)
 
 # Unit tests
 enable_testing()
 add_executable(unit_tests tests/kernel_test.cpp tests/tensor_test.cc)
-target_link_libraries(unit_tests PRIVATE gtest_main libqwen2kern)
+target_link_libraries(unit_tests PRIVATE gtest_main qwen2kern)
 target_compile_definitions(
   unit_tests PRIVATE "TEST_DATA_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data\"")
 include(GoogleTest)
