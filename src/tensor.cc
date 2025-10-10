@@ -18,7 +18,10 @@
 #include <cuda_bf16.h>
 #include <simdjson.h>
 
-Storage::~Storage() { CHECK_CUDA(cudaFree(data)); }
+Storage::~Storage() {
+  if (data)
+    CHECK_CUDA(cudaFree(data));
+}
 
 Storage::Storage(const Storage &other) : elems(other.elems) {
   CHECK_CUDA(cudaMemcpy(data, other.data, sizeof(__nv_bfloat16) * other.elems,
