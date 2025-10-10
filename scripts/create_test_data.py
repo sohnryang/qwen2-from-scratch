@@ -31,10 +31,17 @@ def create_safetensors_test_file(data_dir: str):
 def create_matmul_test_file(data_dir: str):
     in_a = torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.bfloat16)
     in_b = torch.tensor([[6, 7, 8], [9, 10, 11]], dtype=torch.bfloat16)
+    in_b_transposed = in_b.transpose(0, 1).contiguous()
     bias = torch.ones((3, 3), dtype=torch.bfloat16)
     out = torch.matmul(in_a, in_b) + bias
     save_file(
-        {"in_a": in_a, "in_b": in_b, "bias": bias, "out": out},
+        {
+            "in_a": in_a,
+            "in_b": in_b,
+            "in_b_transposed": in_b_transposed,
+            "bias": bias,
+            "out": out,
+        },
         os.path.join(data_dir, "matmul_test.safetensors"),
     )
 
