@@ -28,9 +28,17 @@ Storage::Storage(const Storage &other) : elems(other.elems) {
                         cudaMemcpyDeviceToDevice));
 }
 
-Storage::Storage(Storage &&other) {
+Storage::Storage(Storage &&other) noexcept
+    : data(std::exchange(other.data, nullptr)), elems(other.elems) {}
+
+Storage &Storage::operator=(const Storage &other) {
+  return *this = Storage(other);
+}
+
+Storage &Storage::operator=(Storage &&other) noexcept {
   std::swap(data, other.data);
   std::swap(elems, other.elems);
+  return *this;
 }
 
 Storage::Storage(std::size_t elems_) : elems(elems_) {

@@ -16,9 +16,9 @@ struct Storage {
   ~Storage();
   Storage() = default;
   Storage(const Storage &);
-  Storage(Storage &&);
-  Storage &operator=(const Storage &) = default;
-  Storage &operator=(Storage &&) = default;
+  Storage(Storage &&) noexcept;
+  Storage &operator=(const Storage &);
+  Storage &operator=(Storage &&) noexcept;
 
   Storage(std::size_t elems_);
 
