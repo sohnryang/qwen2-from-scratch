@@ -12,7 +12,7 @@ __global__ void gemm(__nv_bfloat16 *__restrict__ out,
   const auto row = blockIdx.x * blockDim.x + threadIdx.x;
   const auto col = blockIdx.y * blockDim.y + threadIdx.y;
   if (row < m && col < n) {
-    auto res = bias ? bias[row * n + col] : __nv_bfloat16{0};
+    auto res = bias ? bias[col] : __nv_bfloat16{0};
     for (int i = 0; i < k; i++)
       res += scale * in_a[row * k + i] * in_b[i * n + col];
     out[row * n + col] = res;
@@ -28,7 +28,7 @@ __global__ void gemm_transposed(__nv_bfloat16 *__restrict__ out,
   const auto row = blockIdx.x * blockDim.x + threadIdx.x;
   const auto col = blockIdx.y * blockDim.y + threadIdx.y;
   if (row < m && col < n) {
-    auto res = bias ? bias[row * n + col] : __nv_bfloat16{0};
+    auto res = bias ? bias[col] : __nv_bfloat16{0};
     for (int i = 0; i < k; i++)
       res += scale * in_a[row * k + i] * in_b[col * k + i];
     out[row * n + col] = res;
