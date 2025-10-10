@@ -35,6 +35,23 @@ __global__ void gemm_transposed(__nv_bfloat16 *__restrict__ out,
   }
 }
 
+__global__ void dense(__nv_bfloat16 *__restrict__ out,
+                      const __nv_bfloat16 *__restrict__ x,
+                      const __nv_bfloat16 *__restrict__ weight,
+                      const __nv_bfloat16 *__restrict__ bias, std::size_t n,
+                      std::size_t in_features, std::size_t out_features) {
+  const auto row = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto col = blockIdx.y * blockDim.y + threadIdx.y;
+  if (row < n && col < out_features) {
+    auto res = bias ? bias[col] : __nv_bfloat16{0};
+    for (int i = 0; i < in_features; i++)
+      res += x[row * in_features + i] * weight[col * in_features + i];
+    const auto res_f32 = __bfloat162float(res);
+    out[row * out_features + col] =
+        __float2bfloat16(res_f32 / (1.0f + __expf(-res_f32)));
+  }
+}
+
 void launch_gemm(Tensor &out, const Tensor &in_a, const Tensor &in_b,
                  const Tensor &bias, __nv_bfloat16 scale,
                  bool transpose_second) {
