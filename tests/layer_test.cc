@@ -48,3 +48,18 @@ TEST(LayerTest, DenseWithActivation) {
 
   assert_tensors_equal(actual_out, expected_out);
 }
+
+TEST(LayerTest, RMSNorm) {
+  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
+                                       "/rmsnorm_test.safetensors");
+  const auto &input = tensors.at("x");
+  const auto &weight = tensors.at("weight");
+  const auto &expected_out = tensors.at("out");
+  const float epsilon = 1e-5;
+
+  RMSNorm norm_layer = RMSNorm::from_parameter(weight, epsilon);
+
+  Tensor actual_out = norm_layer(input);
+
+  assert_tensors_equal(actual_out, expected_out);
+}

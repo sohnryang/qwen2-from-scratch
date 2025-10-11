@@ -70,6 +70,25 @@ def create_reshape_test_file(data_dir: str):
     )
 
 
+def create_rmsnorm_test_file(data_dir: str):
+    dims = 128
+    eps = 1e-5
+    x = torch.linspace(-5, 5, 2 * dims, dtype=torch.bfloat16).reshape(2, dims)
+
+    rmsnorm_layer = nn.RMSNorm(dims, eps=eps)
+    rmsnorm_layer.to(torch.bfloat16)
+
+    custom_weight = torch.linspace(0, 2, dims, dtype=torch.bfloat16)
+    rmsnorm_layer.weight.data = custom_weight
+
+    out = rmsnorm_layer(x)
+
+    save_file(
+        {"x": x, "weight": custom_weight, "out": out},
+        os.path.join(data_dir, "rmsnorm_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -79,3 +98,4 @@ if __name__ == "__main__":
     create_matmul_test_file(parsed.data_dir)
     create_dense_test_file(parsed.data_dir)
     create_reshape_test_file(parsed.data_dir)
+    create_rmsnorm_test_file(parsed.data_dir)
