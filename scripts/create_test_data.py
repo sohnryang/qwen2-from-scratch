@@ -62,6 +62,14 @@ def create_dense_test_file(data_dir: str):
     )
 
 
+def create_reshape_test_file(data_dir: str):
+    arange_2x3x4 = torch.arange(2 * 3 * 4, dtype=torch.bfloat16).reshape((2, 3, 4))
+    save_file(
+        {"arange_2x3x4": arange_2x3x4},
+        os.path.join(data_dir, "reshape_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -70,3 +78,4 @@ if __name__ == "__main__":
     create_safetensors_test_file(parsed.data_dir)
     create_matmul_test_file(parsed.data_dir)
     create_dense_test_file(parsed.data_dir)
+    create_reshape_test_file(parsed.data_dir)
