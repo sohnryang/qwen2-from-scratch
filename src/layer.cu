@@ -1,3 +1,4 @@
+#include "cuda_utils.h"
 #include "kernel.h"
 #include "layer.h"
 #include "tensor.h"
@@ -20,7 +21,8 @@ Tensor Dense::operator()(const Tensor &input,
   out_storage =
       out_storage ? out_storage : std::make_shared<Storage>(out_elems);
   const dim3 threads_per_block(16, 16);
-  const dim3 num_blocks((batches + 15) / 16, (out_features + 15) / 16);
+  const dim3 num_blocks(ceil_div(batches, threads_per_block.x),
+                        ceil_div(out_features, threads_per_block.y));
   if (use_activation)
     dense<<<num_blocks, threads_per_block>>>(
         out_storage->data, input.storage->data, weight.storage->data,

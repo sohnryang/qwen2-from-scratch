@@ -13,3 +13,7 @@
       std::exit(EXIT_FAILURE);                                                 \
     }                                                                          \
   } while (false)
+
+inline constexpr unsigned int ceil_div(unsigned int x, unsigned int y) {
+  return (x + y - 1) / y;
+}

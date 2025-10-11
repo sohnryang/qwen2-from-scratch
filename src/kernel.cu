@@ -1,3 +1,4 @@
+#include "cuda_utils.h"
 #include "kernel.h"
 #include "tensor.h"
 
@@ -66,7 +67,8 @@ void launch_gemm(Tensor &out, const Tensor &in_a, const Tensor &in_b,
     throw std::runtime_error("incompatible dimension");
 
   const dim3 threads_per_block(16, 16);
-  const dim3 num_blocks((m + 15) / 16, (n + 15) / 16);
+  const dim3 num_blocks(ceil_div(m, threads_per_block.x),
+                        ceil_div(n, threads_per_block.y));
   if (transpose_second) {
     gemm_transposed<<<num_blocks, threads_per_block>>>(
         out.storage->data, in_a.storage->data, in_b.storage->data,
