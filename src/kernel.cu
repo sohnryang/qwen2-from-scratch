@@ -156,8 +156,9 @@ float launch_square_sum_reduce(const Tensor &x) {
 __global__ void elementwise_product(__nv_bfloat16 *__restrict__ out,
                                     const __nv_bfloat16 *__restrict__ x,
                                     const __nv_bfloat16 *__restrict__ y,
-                                    __nv_bfloat16 scale, std::size_t n) {
+                                    float scale, std::size_t n) {
   const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < n)
-    out[idx] = scale * x[idx] * y[idx];
+    out[idx] = __float2bfloat16(scale * __bfloat162float(x[idx]) *
+                                __bfloat162float(y[idx]));
 }
