@@ -3,6 +3,7 @@
 #include "tensor.h"
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 
 class Dense {
@@ -21,6 +22,21 @@ public:
 
   static Dense from_parameters(const Tensor &weight, const Tensor &bias,
                                bool use_activation);
+
+  Tensor operator()(const Tensor &input,
+                    std::shared_ptr<Storage> out_storage = nullptr);
+};
+
+class RMSNorm {
+private:
+  std::size_t dimensions;
+  float epsilon;
+  Tensor weight;
+
+public:
+  RMSNorm(std::size_t dimensions_, float epsilon_);
+
+  static RMSNorm from_parameter(const Tensor &weight, float epsilon);
 
   Tensor operator()(const Tensor &input,
                     std::shared_ptr<Storage> out_storage = nullptr);
