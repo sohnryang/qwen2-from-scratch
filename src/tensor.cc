@@ -2,6 +2,8 @@
 #include "cuda_utils.h"
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -59,6 +61,24 @@ std::vector<__nv_bfloat16> Storage::to_host() {
   CHECK_CUDA(cudaMemcpy(host_data.data(), data, elems * sizeof(__nv_bfloat16),
                         cudaMemcpyDeviceToHost));
   return host_data;
+}
+
+Tensor Tensor::reshape(std::vector<int> new_shape) const {
+  assert(new_shape.size() <= 4 && "invalid dimension");
+  assert(std::count(new_shape.begin(), new_shape.end(), -1) <= 1 &&
+         "too many unknowns");
+  std::size_t elems_per_unknown_axis = 1;
+  for (auto n : new_shape)
+    if (n != -1)
+      elems_per_unknown_axis *= n;
+  assert(storage->elems % elems_per_unknown_axis == 0 && "invalid new shape");
+
+  Tensor reshaped = {.dimensions = new_shape.size(), .storage = storage};
+  std::transform(new_shape.begin(), new_shape.end(), reshaped.shape.begin(),
+                 [&](auto n) {
+                   return n == -1 ? storage->elems / elems_per_unknown_axis : n;
+                 });
+  return reshaped;
 }
 
 std::map<std::string, Tensor>

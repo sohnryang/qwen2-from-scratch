@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -29,9 +30,11 @@ struct Storage {
 };
 
 struct Tensor {
-  std::size_t shape[4] = {0};
+  std::array<std::size_t, 4> shape = {0};
   std::size_t dimensions = 0;
   std::shared_ptr<Storage> storage;
+
+  Tensor reshape(std::vector<int> new_shape) const;
 };
 
 std::map<std::string, Tensor>

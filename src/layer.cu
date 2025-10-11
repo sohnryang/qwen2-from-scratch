@@ -35,7 +35,7 @@ Tensor Dense::operator()(const Tensor &input,
         in_features);
 
   Tensor res = {.dimensions = input.dimensions, .storage = out_storage};
-  std::copy_n(input.shape, input.dimensions - 1, res.shape);
+  std::copy_n(input.shape.begin(), input.dimensions - 1, res.shape.begin());
   res.shape[input.dimensions - 1] = out_features;
   return res;
 }
