@@ -1,3 +1,4 @@
+#include "cuda_utils.h"
 #include "kernel.h"
 #include "tensor.h"
 
@@ -54,4 +55,25 @@ TEST(KernelTest, GemmTransposed) {
     EXPECT_FLOAT_EQ(__bfloat162float(actual_host_data[i]),
                     __bfloat162float(expected_host_data[i]));
   }
+}
+
+TEST(KernelTest, SquareSumReduce) {
+  const size_t num_elements = 2080; // Not a power of 2, and > 1024
+  std::vector<__nv_bfloat16> host_data(num_elements);
+  float expected_sum = 0.0f;
+  for (size_t i = 0; i < num_elements; ++i) {
+    const auto elem = i % 2 ? 1.0f : 0.5f;
+    host_data[i] = __float2bfloat16(elem);
+    expected_sum += elem * elem;
+  }
+
+  auto storage = std::make_shared<Storage>(num_elements);
+  CHECK_CUDA(cudaMemcpy(storage->data, host_data.data(),
+                        num_elements * sizeof(__nv_bfloat16),
+                        cudaMemcpyHostToDevice));
+  Tensor input_tensor{
+      .shape = {num_elements}, .dimensions = 1, .storage = storage};
+
+  float actual_sum = launch_square_sum_reduce(input_tensor);
+  EXPECT_FLOAT_EQ(actual_sum, expected_sum);
 }

@@ -2,7 +2,9 @@
 #include "kernel.h"
 #include "tensor.h"
 
+#include <cstddef>
 #include <stdexcept>
+#include <type_traits>
 
 __global__ void gemm(__nv_bfloat16 *__restrict__ out,
                      const __nv_bfloat16 *__restrict__ in_a,
@@ -78,4 +80,75 @@ void launch_gemm(Tensor &out, const Tensor &in_a, const Tensor &in_b,
         out.storage->data, in_a.storage->data, in_b.storage->data,
         bias.storage->data, scale, m, n, k);
   }
+}
+
+template <typename T>
+__global__ void square_sum_reduce(float *__restrict__ out,
+                                  const T *__restrict__ x, std::size_t n) {
+  extern __shared__ float sdata[];
+  const auto tid = threadIdx.x;
+  const auto idx = blockIdx.x * blockDim.x + tid;
+  sdata[tid] = idx < n ? [&] {
+    if constexpr (std::is_same<T, float>::value)
+      return x[idx];
+    else {
+      float x_value;
+      x_value = __bfloat162float(x[idx]);
+      return x_value * x_value;
+    }
+  }()
+                       : 0.0f;
+  __syncthreads();
+
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (tid < stride)
+      sdata[tid] += sdata[tid + stride];
+    __syncthreads();
+  }
+
+  if (tid == 0)
+    out[blockIdx.x] = sdata[0];
+}
+
+template __global__ void square_sum_reduce<float>(float *__restrict__ out,
+                                                  const float *__restrict__ x,
+                                                  std::size_t n);
+template __global__ void
+square_sum_reduce<__nv_bfloat16>(float *__restrict__ out,
+                                 const __nv_bfloat16 *__restrict__ x,
+                                 std::size_t n);
+
+float launch_square_sum_reduce(const Tensor &x) {
+  const dim3 threads_per_block(1024);
+  dim3 num_blocks(ceil_div(x.storage->elems, threads_per_block.x));
+  float *out_arr;
+  CHECK_CUDA(cudaMalloc(&out_arr, num_blocks.x * sizeof(float)));
+  square_sum_reduce<<<num_blocks, threads_per_block,
+                      threads_per_block.x * sizeof(float)>>>(
+      out_arr, x.storage->data, x.storage->elems);
+  if (num_blocks.x == 1) {
+    float res;
+    CHECK_CUDA(
+        cudaMemcpy(&res, out_arr, sizeof(float), cudaMemcpyDeviceToHost));
+    CHECK_CUDA(cudaFree(out_arr));
+    return res;
+  }
+
+  float *intermediate_arr;
+  CHECK_CUDA(cudaMalloc(&intermediate_arr, num_blocks.x * sizeof(float)));
+  while (num_blocks.x > 1) {
+    CHECK_CUDA(cudaMemcpy(intermediate_arr, out_arr,
+                          num_blocks.x * sizeof(float),
+                          cudaMemcpyDeviceToDevice));
+    square_sum_reduce<<<num_blocks, threads_per_block,
+                        threads_per_block.x * sizeof(float)>>>(
+        out_arr, intermediate_arr, num_blocks.x);
+    num_blocks.x = ceil_div(num_blocks.x, threads_per_block.x);
+  }
+  CHECK_CUDA(cudaFree(intermediate_arr));
+
+  float res;
+  CHECK_CUDA(cudaMemcpy(&res, out_arr, sizeof(float), cudaMemcpyDeviceToHost));
+  CHECK_CUDA(cudaFree(out_arr));
+  return res;
 }

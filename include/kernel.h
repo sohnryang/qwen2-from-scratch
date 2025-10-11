@@ -28,3 +28,9 @@ __global__ void dense(__nv_bfloat16 *__restrict__ out,
 void launch_gemm(Tensor &out, const Tensor &in_a, const Tensor &in_b,
                  const Tensor &bias, __nv_bfloat16 scale,
                  bool transpose_second = false);
+
+template <typename T>
+__global__ void square_sum_reduce(float *__restrict__ out,
+                                  const T *__restrict__ x, std::size_t n);
+
+float launch_square_sum_reduce(const Tensor &x);
