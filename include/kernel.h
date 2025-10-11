@@ -34,3 +34,8 @@ __global__ void square_sum_reduce(float *__restrict__ out,
                                   const T *__restrict__ x, std::size_t n);
 
 float launch_square_sum_reduce(const Tensor &x);
+
+__global__ void elementwise_product(__nv_bfloat16 *__restrict__ out,
+                                    const __nv_bfloat16 *__restrict__ x,
+                                    const __nv_bfloat16 *__restrict__ y,
+                                    __nv_bfloat16 scale, std::size_t n);
