@@ -39,3 +39,9 @@ __global__ void elementwise_product(__nv_bfloat16 *__restrict__ out,
                                     const __nv_bfloat16 *__restrict__ x,
                                     const __nv_bfloat16 *__restrict__ y,
                                     float scale, std::size_t n);
+
+__global__ void softmax(__nv_bfloat16 *__restrict__ out,
+                        const __nv_bfloat16 *__restrict__ x,
+                        std::size_t batches, std::size_t n);
+
+void launch_softmax(Tensor &out, const Tensor &x);

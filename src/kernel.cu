@@ -162,3 +162,39 @@ __global__ void elementwise_product(__nv_bfloat16 *__restrict__ out,
     out[idx] = __float2bfloat16(scale * __bfloat162float(x[idx]) *
                                 __bfloat162float(y[idx]));
 }
+
+__global__ void softmax(__nv_bfloat16 *__restrict__ out,
+                        const __nv_bfloat16 *__restrict__ x,
+                        std::size_t batches, std::size_t n) {
+  const auto batch = blockIdx.x * blockDim.x + threadIdx.x;
+  if (batch < batches) {
+    __nv_bfloat16 x_max = -INFINITY;
+    float norm = 0.0f;
+    for (int i = 0; i < n; i++) {
+      const auto x_cur = x[batch * n + i];
+      if (x_cur > x_max) {
+        norm = norm * __expf(__bfloat162float(x_max - x_cur));
+        x_max = x_cur;
+      }
+      norm += __expf(x_cur - x_max);
+    }
+    for (int i = 0; i < n; i++)
+      out[batch * n + i] = __float2bfloat16(
+          __expf(__bfloat162float(x[batch * n + i] - x_max)) / norm);
+  }
+}
+
+void launch_softmax(Tensor &out, const Tensor &x) {
+  if (out.storage->elems != x.storage->elems)
+    throw std::runtime_error("incompatible dimension");
+  if (x.dimensions < 1)
+    throw std::runtime_error("invalid dimension");
+
+  const auto n = x.shape[x.dimensions - 1];
+  const auto batches = x.storage->elems / n;
+
+  const dim3 threads_per_block(256);
+  const dim3 num_blocks(ceil_div(batches, threads_per_block.x));
+  softmax<<<num_blocks, threads_per_block>>>(out.storage->data, x.storage->data,
+                                             batches, n);
+}
