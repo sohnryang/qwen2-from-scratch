@@ -77,3 +77,24 @@ TEST(KernelTest, SquareSumReduce) {
   float actual_sum = launch_square_sum_reduce(input_tensor);
   EXPECT_FLOAT_EQ(actual_sum, expected_sum);
 }
+
+TEST(KernelTest, Softmax) {
+  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
+                                       "/softmax_test.safetensors");
+  const auto &in_x = tensors.at("x");
+  const auto &expected_out = tensors.at("out");
+
+  auto storage = std::make_shared<Storage>(in_x.storage->elems);
+  Tensor actual_out{
+      .shape = in_x.shape, .dimensions = in_x.dimensions, .storage = storage};
+
+  launch_softmax(actual_out, in_x);
+
+  auto actual_host_data = actual_out.storage->to_host();
+  auto expected_host_data = expected_out.storage->to_host();
+
+  ASSERT_EQ(actual_host_data.size(), expected_host_data.size());
+  for (size_t i = 0; i < actual_host_data.size(); ++i)
+    EXPECT_NEAR(__bfloat162float(actual_host_data[i]),
+                __bfloat162float(expected_host_data[i]), 1e-3);
+}

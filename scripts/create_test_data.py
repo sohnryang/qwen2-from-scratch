@@ -89,6 +89,22 @@ def create_rmsnorm_test_file(data_dir: str):
     )
 
 
+def create_softmax_test_file(data_dir: str):
+    x = torch.tensor(
+        [
+            [0.0, 1.0, 2.0, 3.0],
+            [-1.0, -2.0, -3.0, -4.0],
+            [1.2, -3.4, 5.6, -7.8],
+        ],
+        dtype=torch.bfloat16,
+    )
+    out = nn.functional.softmax(x, dim=-1)
+    save_file(
+        {"x": x, "out": out},
+        os.path.join(data_dir, "softmax_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -99,3 +115,4 @@ if __name__ == "__main__":
     create_dense_test_file(parsed.data_dir)
     create_reshape_test_file(parsed.data_dir)
     create_rmsnorm_test_file(parsed.data_dir)
+    create_softmax_test_file(parsed.data_dir)
