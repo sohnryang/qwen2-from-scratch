@@ -1,3 +1,5 @@
 CompileFlags:
   Add: ["--cuda-gpu-arch=sm_89"]
   Remove: [--generate-code*, -forward-unknown-to-host-compiler]
+Diagnostics:
+  Suppress: [ref_bad_target]
