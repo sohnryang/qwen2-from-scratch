@@ -197,3 +197,52 @@ void launch_softmax(Tensor &out, const Tensor &x) {
   softmax<<<num_blocks, threads_per_block>>>(out.storage->data, x.storage->data,
                                              batches, n);
 }
+
+__global__ void grouped_query_attention_scores(
+    __nv_bfloat16 *__restrict__ out, const __nv_bfloat16 *__restrict__ q,
+    const __nv_bfloat16 *__restrict__ k, std::size_t batches,
+    std::size_t sequence_length, std::size_t dimension, std::size_t kv_heads,
+    std::size_t groups) {
+  const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto q_heads = groups * kv_heads;
+  const auto batch = idx / (q_heads * sequence_length * sequence_length);
+  const auto q_head = idx / (sequence_length * sequence_length) % q_heads;
+  const auto k_head = q_head / groups;
+  const auto row = idx / sequence_length % sequence_length;
+  const auto col = idx % sequence_length;
+  if (batch < batches) {
+    __nv_bfloat16 score = 0.0f;
+    for (int i = 0; i < dimension; i++)
+      score += q[batch * sequence_length * q_heads * dimension +
+                 row * q_heads * dimension + q_head * dimension + i] *
+               k[batch * sequence_length * kv_heads * dimension +
+                 col * kv_heads * dimension + k_head * dimension + i];
+    out[batch * sequence_length * q_heads * sequence_length +
+        row * q_heads * sequence_length + q_head * sequence_length + col] =
+        __float2bfloat16(__bfloat162float(score) / sqrtf(dimension));
+  }
+}
+
+__global__ void grouped_query_attention_output(
+    __nv_bfloat16 *__restrict__ out, const __nv_bfloat16 *__restrict__ p,
+    const __nv_bfloat16 *__restrict__ v, std::size_t batches,
+    std::size_t sequence_length, std::size_t dimension, std::size_t kv_heads,
+    std::size_t groups) {
+  const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto q_heads = groups * kv_heads;
+  const auto batch = idx / (q_heads * sequence_length * dimension);
+  const auto q_head = idx / (sequence_length * dimension) % q_heads;
+  const auto v_head = q_head / groups;
+  const auto row = idx / dimension % sequence_length;
+  const auto col = idx % dimension;
+  if (batch < batches) {
+    __nv_bfloat16 o = 0.0f;
+    for (int i = 0; i < sequence_length; i++)
+      o += p[batch * sequence_length * q_heads * sequence_length +
+             row * q_heads * sequence_length + q_head * sequence_length + i] *
+           v[batch * sequence_length * kv_heads * dimension +
+             i * kv_heads * dimension + v_head * dimension + col];
+    out[batch * sequence_length * q_heads * dimension +
+        row * q_heads * dimension + q_head * dimension + col] = o;
+  }
+}

@@ -44,3 +44,15 @@ __global__ void softmax(__nv_bfloat16 *out, const __nv_bfloat16 *x,
                         std::size_t batches, std::size_t n);
 
 void launch_softmax(Tensor &out, const Tensor &x);
+
+__global__ void grouped_query_attention_scores(
+    __nv_bfloat16 *__restrict__ out, const __nv_bfloat16 *__restrict__ q,
+    const __nv_bfloat16 *__restrict__ k, std::size_t batches,
+    std::size_t sequence_length, std::size_t dimension, std::size_t kv_heads,
+    std::size_t groups);
+
+__global__ void grouped_query_attention_output(
+    __nv_bfloat16 *__restrict__ out, const __nv_bfloat16 *__restrict__ p,
+    const __nv_bfloat16 *__restrict__ v, std::size_t batches,
+    std::size_t sequence_length, std::size_t dimension, std::size_t kv_heads,
+    std::size_t groups);
