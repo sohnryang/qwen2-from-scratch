@@ -105,6 +105,61 @@ def create_softmax_test_file(data_dir: str):
     )
 
 
+def create_gqa_test_file(data_dir: str):
+    batch_size = 1
+    seq_len = 5
+    hidden_dim = 32
+    num_heads = 8
+    num_kv_heads = 2
+    head_dim = hidden_dim // num_heads
+    groups = num_heads // num_kv_heads
+
+    q_in = torch.linspace(
+        -128, 128, batch_size * seq_len * hidden_dim, dtype=torch.bfloat16
+    ).reshape((batch_size, seq_len, hidden_dim))
+    q_weight = torch.eye(hidden_dim, dtype=torch.bfloat16)
+    q_proj = torch.matmul(q_in, q_weight.T)
+    q = q_proj.reshape((batch_size, seq_len, num_heads, -1)).transpose(1, 2)
+
+    k_in = torch.linspace(
+        64, -64, batch_size * seq_len * hidden_dim // groups, dtype=torch.bfloat16
+    ).reshape((batch_size, seq_len, hidden_dim // groups))
+    k_weight = torch.eye(hidden_dim // groups, dtype=torch.bfloat16)
+    k_proj = torch.matmul(k_in, k_weight.T)
+    k = k_proj.reshape((batch_size, seq_len, num_kv_heads, -1)).transpose(1, 2)
+
+    v_in = torch.linspace(
+        32, -32, batch_size * seq_len * hidden_dim // groups, dtype=torch.bfloat16
+    ).reshape((batch_size, seq_len, hidden_dim // groups))
+    v_weight = torch.eye(hidden_dim // groups, dtype=torch.bfloat16)
+    v_proj = torch.matmul(v_in, v_weight.T)
+    v = v_proj.reshape((batch_size, seq_len, num_kv_heads, -1)).transpose(1, 2)
+
+    o_in = (
+        nn.functional.scaled_dot_product_attention(
+            q, k, v, scale=head_dim, enable_gqa=True
+        )
+        .transpose(1, 2)
+        .contiguous()
+        .reshape((batch_size, seq_len, hidden_dim))
+    )
+    o_weight = torch.eye(hidden_dim, dtype=torch.bfloat16)
+    o_proj = torch.matmul(o_in, o_weight.T)
+    save_file(
+        {
+            "q_weight": q_weight,
+            "k_weight": k_weight,
+            "v_weight": v_weight,
+            "o_weight": o_weight,
+            "q_in": q_in,
+            "k_in": k_in,
+            "v_in": v_in,
+            "o_proj": o_proj,
+        },
+        os.path.join(data_dir, "gqa_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -116,3 +171,4 @@ if __name__ == "__main__":
     create_reshape_test_file(parsed.data_dir)
     create_rmsnorm_test_file(parsed.data_dir)
     create_softmax_test_file(parsed.data_dir)
+    create_gqa_test_file(parsed.data_dir)

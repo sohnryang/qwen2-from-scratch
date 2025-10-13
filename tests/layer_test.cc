@@ -63,3 +63,31 @@ TEST(LayerTest, RMSNorm) {
 
   assert_tensors_equal(actual_out, expected_out);
 }
+
+TEST(LayerTest, GroupedQueryAttention) {
+  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
+                                       "/gqa_test.safetensors");
+  const auto &q_weight = tensors.at("q_weight");
+  const auto &k_weight = tensors.at("k_weight");
+  const auto &v_weight = tensors.at("v_weight");
+  const auto &o_weight = tensors.at("o_weight");
+  const auto &expected_out = tensors.at("o_proj");
+
+  const std::size_t num_kv_heads = 2;
+  const std::size_t groups = 4;
+
+  Dense q_layer = Dense::from_parameters(q_weight, false);
+  Dense k_layer = Dense::from_parameters(k_weight, false);
+  Dense v_layer = Dense::from_parameters(v_weight, false);
+  Dense o_layer = Dense::from_parameters(o_weight, false);
+
+  GroupedQueryAttention gqa_layer(num_kv_heads, groups, q_layer, k_layer,
+                                  v_layer, o_layer);
+
+  const auto &q_in = tensors.at("q_in");
+  const auto &k_in = tensors.at("k_in");
+  const auto &v_in = tensors.at("v_in");
+  Tensor actual_out = gqa_layer(q_in, k_in, v_in);
+
+  assert_tensors_equal(actual_out, expected_out);
+}
