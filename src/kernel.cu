@@ -163,8 +163,7 @@ __global__ void elementwise_product(__nv_bfloat16 *__restrict__ out,
                                 __bfloat162float(y[idx]));
 }
 
-__global__ void softmax(__nv_bfloat16 *__restrict__ out,
-                        const __nv_bfloat16 *__restrict__ x,
+__global__ void softmax(__nv_bfloat16 *out, const __nv_bfloat16 *x,
                         std::size_t batches, std::size_t n) {
   const auto batch = blockIdx.x * blockDim.x + threadIdx.x;
   if (batch < batches) {
