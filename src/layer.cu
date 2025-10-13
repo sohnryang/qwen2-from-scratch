@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <functional>
 #include <memory>
 
 Tensor Dense::operator()(const Tensor &input,
@@ -90,4 +92,71 @@ Tensor RMSNorm::operator()(const Tensor &input,
   return {.shape = input.shape,
           .dimensions = input.dimensions,
           .storage = out_storage};
+}
+
+Tensor GroupedQueryAttention::operator()(
+    const Tensor &input_q, const Tensor &input_k, const Tensor &input_v,
+    std::optional<std::reference_wrapper<const Tensor>> input_mask,
+    const std::vector<std::shared_ptr<Storage>> &out_storages) {
+  auto get_storage_or = [&](std::size_t idx, auto fallback) {
+    return out_storages.size() <= idx ? fallback() : out_storages[idx];
+  };
+
+  const auto q_proj =
+      _q_layer(input_q, get_storage_or(0, []() { return nullptr; }));
+  const auto k_proj =
+      _k_layer(input_k, get_storage_or(1, []() { return nullptr; }));
+  const auto v_proj =
+      _v_layer(input_v, get_storage_or(2, []() { return nullptr; }));
+
+  assert(q_proj.dimensions == k_proj.dimensions &&
+         k_proj.dimensions == v_proj.dimensions &&
+         "QKV dimension should match");
+  assert(q_proj.shape[q_proj.dimensions - 2] ==
+             k_proj.shape[k_proj.dimensions - 2] &&
+         k_proj.shape[k_proj.dimensions - 2] ==
+             v_proj.shape[v_proj.dimensions - 2] &&
+         "QKV sequence length should match");
+  assert(k_proj.storage->elems == v_proj.storage->elems &&
+         q_proj.storage->elems == k_proj.storage->elems * _groups &&
+         "QKV element count should match");
+  const auto dimension = _k_layer.out_features() / _kv_heads;
+  const auto sequence_length = q_proj.shape[q_proj.dimensions - 2];
+  const auto batches =
+      k_proj.storage->elems / _k_layer.out_features() / sequence_length;
+  const auto scores_storage = get_storage_or(3, [&]() {
+    return std::make_shared<Storage>(batches * _kv_heads * _groups *
+                                     sequence_length * sequence_length);
+  });
+  const dim3 threads_per_block(1024);
+  {
+    const dim3 num_blocks(ceil_div(scores_storage->elems, threads_per_block.x));
+    grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
+        scores_storage->data, q_proj.storage->data, k_proj.storage->data,
+        batches, sequence_length, dimension, _kv_heads, _groups);
+  }
+  {
+    const dim3 num_blocks(
+        ceil_div(scores_storage->elems / sequence_length, threads_per_block.x));
+    softmax<<<num_blocks, threads_per_block>>>(
+        scores_storage->data, scores_storage->data,
+        scores_storage->elems / sequence_length, sequence_length);
+  }
+  const auto o_storage = get_storage_or(4, [&]() {
+    return std::make_shared<Storage>(batches * _kv_heads * _groups *
+                                     sequence_length * dimension);
+  });
+  {
+    const dim3 num_blocks(ceil_div(o_storage->elems, 1024));
+    grouped_query_attention_output<<<num_blocks, threads_per_block>>>(
+        o_storage->data, scores_storage->data, v_proj.storage->data, batches,
+        sequence_length, dimension, _kv_heads, _groups);
+  }
+  const auto o_proj = _o_layer(
+      Tensor{.shape = {o_storage->elems}, .dimensions = 1, .storage = o_storage}
+          .reshape({static_cast<int>(batches),
+                    static_cast<int>(sequence_length),
+                    static_cast<int>(_kv_heads * _groups * dimension)}),
+      get_storage_or(5, []() { return nullptr; }));
+  return o_proj;
 }

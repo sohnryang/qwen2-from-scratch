@@ -3,8 +3,10 @@
 #include "tensor.h"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 
 class Dense {
 private:
@@ -42,4 +44,24 @@ public:
 
   Tensor operator()(const Tensor &input,
                     std::shared_ptr<Storage> out_storage = nullptr);
+};
+
+class GroupedQueryAttention {
+private:
+  std::size_t _kv_heads;
+  std::size_t _groups;
+  Dense _q_layer;
+  Dense _k_layer;
+  Dense _v_layer;
+  Dense _o_layer;
+
+public:
+  GroupedQueryAttention(std::size_t kv_heads, std::size_t groups,
+                        const Dense &q_layer, const Dense &k_layer,
+                        const Dense &v_layer, const Dense &o_layer);
+
+  Tensor operator()(
+      const Tensor &input_q, const Tensor &input_k, const Tensor &input_v,
+      std::optional<std::reference_wrapper<const Tensor>> input_mask = {},
+      const std::vector<std::shared_ptr<Storage>> &out_storages = {});
 };

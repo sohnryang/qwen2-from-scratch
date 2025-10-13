@@ -48,3 +48,18 @@ RMSNorm RMSNorm::from_parameter(const Tensor &weight, float epsilon) {
   rmsnorm._weight = weight;
   return rmsnorm;
 }
+
+GroupedQueryAttention::GroupedQueryAttention(
+    std::size_t kv_heads, std::size_t groups, const Dense &q_layer,
+    const Dense &k_layer, const Dense &v_layer, const Dense &o_layer)
+    : _kv_heads{kv_heads}, _groups{groups}, _q_layer(q_layer),
+      _k_layer(k_layer), _v_layer(v_layer), _o_layer(o_layer) {
+  assert(_k_layer.out_features() == _v_layer.out_features() &&
+         "K and V dimensions mismatch");
+  assert(_q_layer.out_features() % _k_layer.out_features() == 0 &&
+         "Q head count should be multiple of KV head count");
+  assert(_k_layer.out_features() % kv_heads == 0 &&
+         "KV layer output dimension should be multiple of KV heads");
+  assert(_q_layer.out_features() % (kv_heads * groups) == 0 &&
+         "Q layer output dimension should be multiple of Q heads");
+}
