@@ -108,17 +108,15 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const Tensor<__nv_bfloat16> &input_v,
     std::optional<std::reference_wrapper<const Tensor<__nv_bfloat16>>>
         input_mask,
-    const std::vector<std::shared_ptr<Storage<__nv_bfloat16>>> &out_storages) {
-  auto get_storage_or = [&](std::size_t idx, auto fallback) {
-    return out_storages.size() <= idx ? fallback() : out_storages[idx];
-  };
-
-  const auto q_proj =
-      _q_layer(input_q, get_storage_or(0, []() { return nullptr; }));
-  const auto k_proj =
-      _k_layer(input_k, get_storage_or(1, []() { return nullptr; }));
-  const auto v_proj =
-      _v_layer(input_v, get_storage_or(2, []() { return nullptr; }));
+    std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage,
+    std::shared_ptr<Storage<float>> scores_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> attention_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> o_proj_out_storage) {
+  const auto q_proj = _q_layer(input_q, q_proj_out_storage);
+  const auto k_proj = _k_layer(input_k, k_proj_out_storage);
+  const auto v_proj = _v_layer(input_v, v_proj_out_storage);
 
   assert(q_proj.dimensions == k_proj.dimensions &&
          k_proj.dimensions == v_proj.dimensions &&
@@ -135,40 +133,41 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   const auto sequence_length = q_proj.shape[q_proj.dimensions - 2];
   const auto batches =
       k_proj.storage->elems / _k_layer.out_features() / sequence_length;
-  const auto scores_storage = get_storage_or(3, [&]() {
-    return std::make_shared<Storage<__nv_bfloat16>>(
+  if (!scores_out_storage)
+    scores_out_storage = std::make_shared<Storage<float>>(
         batches * _kv_heads * _groups * sequence_length * sequence_length);
-  });
   const dim3 threads_per_block(1024);
   {
-    const dim3 num_blocks(ceil_div(scores_storage->elems, threads_per_block.x));
+    const dim3 num_blocks(
+        ceil_div(scores_out_storage->elems, threads_per_block.x));
     grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
-        scores_storage->data, q_proj.storage->data, k_proj.storage->data,
+        scores_out_storage->data, q_proj.storage->data, k_proj.storage->data,
         batches, sequence_length, dimension, _kv_heads, _groups);
   }
   {
-    const dim3 num_blocks(
-        ceil_div(scores_storage->elems / sequence_length, threads_per_block.x));
+    const dim3 num_blocks(ceil_div(scores_out_storage->elems / sequence_length,
+                                   threads_per_block.x));
     softmax<<<num_blocks, threads_per_block>>>(
-        scores_storage->data, scores_storage->data,
-        scores_storage->elems / sequence_length, sequence_length);
+        scores_out_storage->data, scores_out_storage->data,
+        scores_out_storage->elems / sequence_length, sequence_length);
   }
-  const auto o_storage = get_storage_or(4, [&]() {
-    return std::make_shared<Storage<__nv_bfloat16>>(
+  if (!attention_out_storage)
+    attention_out_storage = std::make_shared<Storage<__nv_bfloat16>>(
         batches * _kv_heads * _groups * sequence_length * dimension);
-  });
   {
-    const dim3 num_blocks(ceil_div(o_storage->elems, 1024));
+    const dim3 num_blocks(ceil_div(attention_out_storage->elems, 1024));
     grouped_query_attention_output<<<num_blocks, threads_per_block>>>(
-        o_storage->data, scores_storage->data, v_proj.storage->data, batches,
-        sequence_length, dimension, _kv_heads, _groups);
+        attention_out_storage->data, scores_out_storage->data,
+        v_proj.storage->data, batches, sequence_length, dimension, _kv_heads,
+        _groups);
   }
   const auto o_proj = _o_layer(
-      Tensor<__nv_bfloat16>{
-          .shape = {o_storage->elems}, .dimensions = 1, .storage = o_storage}
+      Tensor<__nv_bfloat16>{.shape = {attention_out_storage->elems},
+                            .dimensions = 1,
+                            .storage = attention_out_storage}
           .reshape({static_cast<int>(batches),
                     static_cast<int>(sequence_length),
                     static_cast<int>(_kv_heads * _groups * dimension)}),
-      get_storage_or(5, []() { return nullptr; }));
+      o_proj_out_storage);
   return o_proj;
 }

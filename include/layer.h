@@ -67,12 +67,16 @@ public:
                         const Dense &q_layer, const Dense &k_layer,
                         const Dense &v_layer, const Dense &o_layer);
 
-  Tensor<__nv_bfloat16>
-  operator()(const Tensor<__nv_bfloat16> &input_q,
-             const Tensor<__nv_bfloat16> &input_k,
-             const Tensor<__nv_bfloat16> &input_v,
-             std::optional<std::reference_wrapper<const Tensor<__nv_bfloat16>>>
-                 input_mask = {},
-             const std::vector<std::shared_ptr<Storage<__nv_bfloat16>>>
-                 &out_storages = {});
+  Tensor<__nv_bfloat16> operator()(
+      const Tensor<__nv_bfloat16> &input_q,
+      const Tensor<__nv_bfloat16> &input_k,
+      const Tensor<__nv_bfloat16> &input_v,
+      std::optional<std::reference_wrapper<const Tensor<__nv_bfloat16>>>
+          input_mask = {},
+      std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<float>> scores_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> attention_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> o_proj_out_storage = nullptr);
 };

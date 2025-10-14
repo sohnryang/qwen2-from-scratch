@@ -222,7 +222,7 @@ void launch_softmax(Tensor<__nv_bfloat16> &out,
 }
 
 __global__ void grouped_query_attention_scores(
-    __nv_bfloat16 *__restrict__ out, const __nv_bfloat16 *__restrict__ q,
+    float *__restrict__ out, const __nv_bfloat16 *__restrict__ q,
     const __nv_bfloat16 *__restrict__ k, std::size_t batches,
     std::size_t sequence_length, std::size_t dimension, std::size_t kv_heads,
     std::size_t groups) {
@@ -244,12 +244,12 @@ __global__ void grouped_query_attention_scores(
                      col * kv_heads * dimension + k_head * dimension + i]);
     out[batch * sequence_length * q_heads * sequence_length +
         row * q_heads * sequence_length + q_head * sequence_length + col] =
-        __float2bfloat16(score / sqrtf(dimension));
+        score / sqrtf(dimension);
   }
 }
 
 __global__ void grouped_query_attention_output(
-    __nv_bfloat16 *__restrict__ out, const __nv_bfloat16 *__restrict__ p,
+    __nv_bfloat16 *__restrict__ out, const float *__restrict__ p,
     const __nv_bfloat16 *__restrict__ v, std::size_t batches,
     std::size_t sequence_length, std::size_t dimension, std::size_t kv_heads,
     std::size_t groups) {
@@ -263,10 +263,8 @@ __global__ void grouped_query_attention_output(
   if (batch < batches) {
     float o = 0.0f;
     for (int i = 0; i < sequence_length; i++)
-      o += __bfloat162float(
-               p[batch * sequence_length * q_heads * sequence_length +
-                 row * q_heads * sequence_length + q_head * sequence_length +
-                 i]) *
+      o += p[batch * sequence_length * q_heads * sequence_length +
+             row * q_heads * sequence_length + q_head * sequence_length + i] *
            __bfloat162float(
                v[batch * sequence_length * kv_heads * dimension +
                  i * kv_heads * dimension + v_head * dimension + col]);
