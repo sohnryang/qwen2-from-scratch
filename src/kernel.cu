@@ -15,10 +15,11 @@ __global__ void gemm(__nv_bfloat16 *__restrict__ out,
   const auto row = blockIdx.x * blockDim.x + threadIdx.x;
   const auto col = blockIdx.y * blockDim.y + threadIdx.y;
   if (row < m && col < n) {
-    auto res = bias ? bias[col] : __nv_bfloat16{0};
+    float res = bias ? __bfloat162float(bias[col]) : 0.0f;
     for (int i = 0; i < k; i++)
-      res += scale * in_a[row * k + i] * in_b[i * n + col];
-    out[row * n + col] = res;
+      res += __bfloat162float(scale) * __bfloat162float(in_a[row * k + i]) *
+             __bfloat162float(in_b[i * n + col]);
+    out[row * n + col] = __float2bfloat16(res);
   }
 }
 
@@ -31,10 +32,11 @@ __global__ void gemm_transposed(__nv_bfloat16 *__restrict__ out,
   const auto row = blockIdx.x * blockDim.x + threadIdx.x;
   const auto col = blockIdx.y * blockDim.y + threadIdx.y;
   if (row < m && col < n) {
-    auto res = bias ? bias[col] : __nv_bfloat16{0};
+    float res = bias ? __bfloat162float(bias[col]) : 0.0f;
     for (int i = 0; i < k; i++)
-      res += scale * in_a[row * k + i] * in_b[col * k + i];
-    out[row * n + col] = res;
+      res += __bfloat162float(scale) * __bfloat162float(in_a[row * k + i]) *
+             __bfloat162float(in_b[col * k + i]);
+    out[row * n + col] = __float2bfloat16(res);
   }
 }
 
@@ -46,12 +48,12 @@ __global__ void dense(__nv_bfloat16 *__restrict__ out,
   const auto row = blockIdx.x * blockDim.x + threadIdx.x;
   const auto col = blockIdx.y * blockDim.y + threadIdx.y;
   if (row < n && col < out_features) {
-    auto res = bias ? bias[col] : __nv_bfloat16{0};
+    auto res = bias ? __bfloat162float(bias[col]) : 0.0f;
     for (int i = 0; i < in_features; i++)
-      res += x[row * in_features + i] * weight[col * in_features + i];
-    const auto res_f32 = __bfloat162float(res);
+      res += __bfloat162float(x[row * in_features + i]) *
+             __bfloat162float(weight[col * in_features + i]);
     out[row * out_features + col] =
-        __float2bfloat16(res_f32 / (1.0f + __expf(-res_f32)));
+        __float2bfloat16(res / (1.0f + __expf(-res)));
   }
 }
 
@@ -211,15 +213,17 @@ __global__ void grouped_query_attention_scores(
   const auto row = idx / sequence_length % sequence_length;
   const auto col = idx % sequence_length;
   if (batch < batches) {
-    __nv_bfloat16 score = 0.0f;
+    float score = 0.0f;
     for (int i = 0; i < dimension; i++)
-      score += q[batch * sequence_length * q_heads * dimension +
-                 row * q_heads * dimension + q_head * dimension + i] *
-               k[batch * sequence_length * kv_heads * dimension +
-                 col * kv_heads * dimension + k_head * dimension + i];
+      score += __bfloat162float(
+                   q[batch * sequence_length * q_heads * dimension +
+                     row * q_heads * dimension + q_head * dimension + i]) *
+               __bfloat162float(
+                   k[batch * sequence_length * kv_heads * dimension +
+                     col * kv_heads * dimension + k_head * dimension + i]);
     out[batch * sequence_length * q_heads * sequence_length +
         row * q_heads * sequence_length + q_head * sequence_length + col] =
-        __float2bfloat16(__bfloat162float(score) / sqrtf(dimension));
+        __float2bfloat16(score / sqrtf(dimension));
   }
 }
 
@@ -236,13 +240,17 @@ __global__ void grouped_query_attention_output(
   const auto row = idx / dimension % sequence_length;
   const auto col = idx % dimension;
   if (batch < batches) {
-    __nv_bfloat16 o = 0.0f;
+    float o = 0.0f;
     for (int i = 0; i < sequence_length; i++)
-      o += p[batch * sequence_length * q_heads * sequence_length +
-             row * q_heads * sequence_length + q_head * sequence_length + i] *
-           v[batch * sequence_length * kv_heads * dimension +
-             i * kv_heads * dimension + v_head * dimension + col];
+      o += __bfloat162float(
+               p[batch * sequence_length * q_heads * sequence_length +
+                 row * q_heads * sequence_length + q_head * sequence_length +
+                 i]) *
+           __bfloat162float(
+               v[batch * sequence_length * kv_heads * dimension +
+                 i * kv_heads * dimension + v_head * dimension + col]);
     out[batch * sequence_length * q_heads * dimension +
-        row * q_heads * dimension + q_head * dimension + col] = o;
+        row * q_heads * dimension + q_head * dimension + col] =
+        __float2bfloat16(o);
   }
 }
