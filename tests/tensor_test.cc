@@ -1,4 +1,3 @@
-#include "cuda_utils.h"
 #include "tensor.h"
 
 #include <gmock/gmock.h>
@@ -14,19 +13,6 @@ using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::FloatEq;
 using ::testing::Pointwise;
-
-// Helper function to copy data from device to host
-std::vector<__nv_bfloat16>
-get_tensor_data(const Tensor<__nv_bfloat16> &tensor) {
-  if (!tensor.storage) {
-    return {};
-  }
-  std::vector<__nv_bfloat16> host_data(tensor.storage->elems);
-  CHECK_CUDA(cudaMemcpy(host_data.data(), tensor.storage->data,
-                        tensor.storage->elems * sizeof(__nv_bfloat16),
-                        cudaMemcpyDeviceToHost));
-  return host_data;
-}
 
 TEST(TensorTest, LoadSafetensors) {
   std::string filepath = std::string(TEST_DATA_DIR) + "/load_test.safetensors";
@@ -44,7 +30,7 @@ TEST(TensorTest, LoadSafetensors) {
   EXPECT_THAT(contiguous_tensor.shape, ElementsAre(2, 3, 5, 7));
 
   // Check content
-  auto contiguous_data = get_tensor_data(contiguous_tensor);
+  auto contiguous_data = contiguous_tensor.storage->to_host();
   ASSERT_EQ(contiguous_data.size(), 2 * 3 * 5 * 7);
   std::vector<float> contiguous_float_data(contiguous_data.size());
   for (size_t i = 0; i < contiguous_data.size(); ++i)
@@ -65,7 +51,7 @@ TEST(TensorTest, LoadSafetensors) {
   EXPECT_THAT(zeros_tensor.shape, ElementsAre(2, 3, 5, 7));
 
   // Check content
-  auto zeros_data = get_tensor_data(zeros_tensor);
+  auto zeros_data = zeros_tensor.storage->to_host();
   ASSERT_EQ(zeros_data.size(), 2 * 3 * 5 * 7);
   std::vector<float> zeros_float_data(zeros_data.size());
   for (size_t i = 0; i < zeros_data.size(); ++i)
@@ -133,7 +119,7 @@ TEST(TensorTest, Reshape) {
   EXPECT_EQ(reshaped_neg1.storage, tensor.storage);
 
   // Check that data is still correct
-  auto reshaped_data = get_tensor_data(reshaped_6x4);
+  auto reshaped_data = reshaped_6x4.storage->to_host();
   ASSERT_EQ(reshaped_data.size(), 24);
   std::vector<float> float_data(reshaped_data.size());
   for (size_t i = 0; i < reshaped_data.size(); ++i) {
