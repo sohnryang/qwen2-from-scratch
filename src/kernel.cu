@@ -57,8 +57,9 @@ __global__ void dense(__nv_bfloat16 *__restrict__ out,
   }
 }
 
-void launch_gemm(Tensor &out, const Tensor &in_a, const Tensor &in_b,
-                 const Tensor &bias, __nv_bfloat16 scale,
+void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
+                 const Tensor<__nv_bfloat16> &in_b,
+                 const Tensor<__nv_bfloat16> &bias, __nv_bfloat16 scale,
                  bool transpose_second) {
   if (in_a.dimensions != 2 || in_b.dimensions != 2 || out.dimensions != 2)
     throw std::runtime_error("invalid dimension");
@@ -120,7 +121,7 @@ square_sum_reduce<__nv_bfloat16>(float *__restrict__ out,
                                  const __nv_bfloat16 *__restrict__ x,
                                  std::size_t n);
 
-float launch_square_sum_reduce(const Tensor &x) {
+float launch_square_sum_reduce(const Tensor<__nv_bfloat16> &x) {
   const dim3 threads_per_block(1024);
   dim3 num_blocks(ceil_div(x.storage->elems, threads_per_block.x));
   float *out_arr;
@@ -185,7 +186,8 @@ __global__ void softmax(__nv_bfloat16 *out, const __nv_bfloat16 *x,
   }
 }
 
-void launch_softmax(Tensor &out, const Tensor &x) {
+void launch_softmax(Tensor<__nv_bfloat16> &out,
+                    const Tensor<__nv_bfloat16> &x) {
   if (out.storage->elems != x.storage->elems)
     throw std::runtime_error("incompatible dimension");
   if (x.dimensions < 1)

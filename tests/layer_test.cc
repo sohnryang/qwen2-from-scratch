@@ -2,9 +2,13 @@
 #include "tensor.h"
 
 #include <gtest/gtest.h>
+
 #include <vector>
 
-static void assert_tensors_equal(const Tensor &actual, const Tensor &expected) {
+#include <cuda_bf16.h>
+
+static void assert_tensors_equal(const Tensor<__nv_bfloat16> &actual,
+                                 const Tensor<__nv_bfloat16> &expected) {
   ASSERT_EQ(actual.dimensions, expected.dimensions);
   for (std::size_t i = 0; i < actual.dimensions; ++i) {
     ASSERT_EQ(actual.shape[i], expected.shape[i]);
@@ -29,7 +33,7 @@ TEST(LayerTest, DenseNoActivation) {
 
   Dense dense_layer = Dense::from_parameters(weight, bias, false);
 
-  Tensor actual_out = dense_layer(input);
+  Tensor<__nv_bfloat16> actual_out = dense_layer(input);
 
   assert_tensors_equal(actual_out, expected_out);
 }
@@ -44,7 +48,7 @@ TEST(LayerTest, DenseWithActivation) {
 
   Dense dense_layer = Dense::from_parameters(weight, bias, true);
 
-  Tensor actual_out = dense_layer(input);
+  Tensor<__nv_bfloat16> actual_out = dense_layer(input);
 
   assert_tensors_equal(actual_out, expected_out);
 }
@@ -59,7 +63,7 @@ TEST(LayerTest, RMSNorm) {
 
   RMSNorm norm_layer = RMSNorm::from_parameter(weight, epsilon);
 
-  Tensor actual_out = norm_layer(input);
+  Tensor<__nv_bfloat16> actual_out = norm_layer(input);
 
   assert_tensors_equal(actual_out, expected_out);
 }
@@ -87,7 +91,7 @@ TEST(LayerTest, GroupedQueryAttention) {
   const auto &q_in = tensors.at("q_in");
   const auto &k_in = tensors.at("k_in");
   const auto &v_in = tensors.at("v_in");
-  Tensor actual_out = gqa_layer(q_in, k_in, v_in);
+  Tensor<__nv_bfloat16> actual_out = gqa_layer(q_in, k_in, v_in);
 
   assert_tensors_equal(actual_out, expected_out);
 }

@@ -9,8 +9,11 @@
 #include <functional>
 #include <memory>
 
-Tensor Dense::operator()(const Tensor &input,
-                         std::shared_ptr<Storage> out_storage) {
+#include <cuda_bf16.h>
+
+Tensor<__nv_bfloat16>
+Dense::operator()(const Tensor<__nv_bfloat16> &input,
+                  std::shared_ptr<Storage<__nv_bfloat16>> out_storage) {
   assert(input.shape[input.dimensions - 1] == _in_features &&
          "invalid input dimension");
   const auto batches = input.storage->elems / _in_features;
@@ -20,8 +23,9 @@ Tensor Dense::operator()(const Tensor &input,
                input.storage->elems / _in_features * _out_features &&
            "invalid output storage size");
 
-  out_storage =
-      out_storage ? out_storage : std::make_shared<Storage>(out_elems);
+  out_storage = out_storage
+                    ? out_storage
+                    : std::make_shared<Storage<__nv_bfloat16>>(out_elems);
   const dim3 threads_per_block(16, 16);
   const dim3 num_blocks(ceil_div(batches, threads_per_block.x),
                         ceil_div(_out_features, threads_per_block.y));
@@ -36,14 +40,16 @@ Tensor Dense::operator()(const Tensor &input,
         _bias ? _bias->storage->data : nullptr, 1.0f, batches, _out_features,
         _in_features);
 
-  Tensor res = {.dimensions = input.dimensions, .storage = out_storage};
+  Tensor<__nv_bfloat16> res = {.dimensions = input.dimensions,
+                               .storage = out_storage};
   std::copy_n(input.shape.begin(), input.dimensions - 1, res.shape.begin());
   res.shape[input.dimensions - 1] = _out_features;
   return res;
 }
 
-Tensor RMSNorm::operator()(const Tensor &input,
-                           std::shared_ptr<Storage> out_storage) {
+Tensor<__nv_bfloat16>
+RMSNorm::operator()(const Tensor<__nv_bfloat16> &input,
+                    std::shared_ptr<Storage<__nv_bfloat16>> out_storage) {
   assert(input.shape[input.dimensions - 1] == _dimensions &&
          "invalid input dimension");
   const auto batches = input.storage->elems / _dimensions;
@@ -51,10 +57,13 @@ Tensor RMSNorm::operator()(const Tensor &input,
     assert(out_storage->elems == input.storage->elems &&
            "invalid output storage size");
 
-  out_storage = out_storage ? out_storage
-                            : std::make_shared<Storage>(input.storage->elems);
+  out_storage =
+      out_storage
+          ? out_storage
+          : std::make_shared<Storage<__nv_bfloat16>>(input.storage->elems);
 
-  Tensor reshaped = input.reshape({-1, static_cast<int>(_dimensions)});
+  Tensor<__nv_bfloat16> reshaped =
+      input.reshape({-1, static_cast<int>(_dimensions)});
   const dim3 threads_per_block(1024);
   const dim3 num_blocks(ceil_div(_dimensions, threads_per_block.x));
   float *out_arr, *intermediate_arr;
@@ -94,10 +103,12 @@ Tensor RMSNorm::operator()(const Tensor &input,
           .storage = out_storage};
 }
 
-Tensor GroupedQueryAttention::operator()(
-    const Tensor &input_q, const Tensor &input_k, const Tensor &input_v,
-    std::optional<std::reference_wrapper<const Tensor>> input_mask,
-    const std::vector<std::shared_ptr<Storage>> &out_storages) {
+Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
+    const Tensor<__nv_bfloat16> &input_q, const Tensor<__nv_bfloat16> &input_k,
+    const Tensor<__nv_bfloat16> &input_v,
+    std::optional<std::reference_wrapper<const Tensor<__nv_bfloat16>>>
+        input_mask,
+    const std::vector<std::shared_ptr<Storage<__nv_bfloat16>>> &out_storages) {
   auto get_storage_or = [&](std::size_t idx, auto fallback) {
     return out_storages.size() <= idx ? fallback() : out_storages[idx];
   };
@@ -125,8 +136,8 @@ Tensor GroupedQueryAttention::operator()(
   const auto batches =
       k_proj.storage->elems / _k_layer.out_features() / sequence_length;
   const auto scores_storage = get_storage_or(3, [&]() {
-    return std::make_shared<Storage>(batches * _kv_heads * _groups *
-                                     sequence_length * sequence_length);
+    return std::make_shared<Storage<__nv_bfloat16>>(
+        batches * _kv_heads * _groups * sequence_length * sequence_length);
   });
   const dim3 threads_per_block(1024);
   {
@@ -143,8 +154,8 @@ Tensor GroupedQueryAttention::operator()(
         scores_storage->elems / sequence_length, sequence_length);
   }
   const auto o_storage = get_storage_or(4, [&]() {
-    return std::make_shared<Storage>(batches * _kv_heads * _groups *
-                                     sequence_length * dimension);
+    return std::make_shared<Storage<__nv_bfloat16>>(
+        batches * _kv_heads * _groups * sequence_length * dimension);
   });
   {
     const dim3 num_blocks(ceil_div(o_storage->elems, 1024));
@@ -153,7 +164,8 @@ Tensor GroupedQueryAttention::operator()(
         sequence_length, dimension, _kv_heads, _groups);
   }
   const auto o_proj = _o_layer(
-      Tensor{.shape = {o_storage->elems}, .dimensions = 1, .storage = o_storage}
+      Tensor<__nv_bfloat16>{
+          .shape = {o_storage->elems}, .dimensions = 1, .storage = o_storage}
           .reshape({static_cast<int>(batches),
                     static_cast<int>(sequence_length),
                     static_cast<int>(_kv_heads * _groups * dimension)}),

@@ -8,13 +8,16 @@
 #include <string>
 #include <vector>
 
+#include <cuda_bf16.h>
+
 using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::FloatEq;
 using ::testing::Pointwise;
 
 // Helper function to copy data from device to host
-std::vector<__nv_bfloat16> get_tensor_data(const Tensor &tensor) {
+std::vector<__nv_bfloat16>
+get_tensor_data(const Tensor<__nv_bfloat16> &tensor) {
   if (!tensor.storage) {
     return {};
   }

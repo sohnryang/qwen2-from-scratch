@@ -25,15 +25,16 @@ __global__ void dense(__nv_bfloat16 *__restrict__ out,
                       const __nv_bfloat16 *__restrict__ bias, std::size_t n,
                       std::size_t in_features, std::size_t out_features);
 
-void launch_gemm(Tensor &out, const Tensor &in_a, const Tensor &in_b,
-                 const Tensor &bias, __nv_bfloat16 scale,
+void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
+                 const Tensor<__nv_bfloat16> &in_b,
+                 const Tensor<__nv_bfloat16> &bias, __nv_bfloat16 scale,
                  bool transpose_second = false);
 
 template <typename T>
 __global__ void square_sum_reduce(float *__restrict__ out,
                                   const T *__restrict__ x, std::size_t n);
 
-float launch_square_sum_reduce(const Tensor &x);
+float launch_square_sum_reduce(const Tensor<__nv_bfloat16> &x);
 
 __global__ void elementwise_product(__nv_bfloat16 *__restrict__ out,
                                     const __nv_bfloat16 *__restrict__ x,
@@ -43,7 +44,7 @@ __global__ void elementwise_product(__nv_bfloat16 *__restrict__ out,
 __global__ void softmax(__nv_bfloat16 *out, const __nv_bfloat16 *x,
                         std::size_t batches, std::size_t n);
 
-void launch_softmax(Tensor &out, const Tensor &x);
+void launch_softmax(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &x);
 
 __global__ void grouped_query_attention_scores(
     __nv_bfloat16 *__restrict__ out, const __nv_bfloat16 *__restrict__ q,

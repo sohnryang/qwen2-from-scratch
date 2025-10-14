@@ -20,50 +20,58 @@
 #include <cuda_bf16.h>
 #include <simdjson.h>
 
-Storage::~Storage() {
+template <typename T> Storage<T>::~Storage() {
   if (data)
     CHECK_CUDA(cudaFree(data));
 }
 
-Storage::Storage(const Storage &other) : elems{other.elems} {
-  CHECK_CUDA(cudaMemcpy(data, other.data, sizeof(__nv_bfloat16) * other.elems,
+template <typename T>
+Storage<T>::Storage(const Storage &other) : elems{other.elems} {
+  CHECK_CUDA(cudaMemcpy(data, other.data, sizeof(T) * other.elems,
                         cudaMemcpyDeviceToDevice));
 }
 
-Storage::Storage(Storage &&other) noexcept
+template <typename T>
+Storage<T>::Storage(Storage &&other) noexcept
     : data{std::exchange(other.data, nullptr)}, elems{other.elems} {}
 
-Storage &Storage::operator=(const Storage &other) {
+template <typename T> Storage<T> &Storage<T>::operator=(const Storage &other) {
   return *this = Storage(other);
 }
 
-Storage &Storage::operator=(Storage &&other) noexcept {
+template <typename T>
+Storage<T> &Storage<T>::operator=(Storage &&other) noexcept {
   std::swap(data, other.data);
   std::swap(elems, other.elems);
   return *this;
 }
 
-Storage::Storage(std::size_t elems_) : elems{elems_} {
-  CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(__nv_bfloat16)));
+template <typename T> Storage<T>::Storage(std::size_t elems_) : elems{elems_} {
+  CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(T)));
 }
 
-Storage Storage::load_from_offset(const std::uint8_t *buf, std::size_t begin,
-                                  std::size_t end) {
+template <typename T>
+Storage<T> Storage<T>::load_from_offset(const std::uint8_t *buf,
+                                        std::size_t begin, std::size_t end) {
   const auto bytes = end - begin;
-  Storage loaded(bytes / sizeof(__nv_bfloat16));
+  Storage loaded(bytes / sizeof(T));
   CHECK_CUDA(
       cudaMemcpy(loaded.data, buf + begin, bytes, cudaMemcpyHostToDevice));
   return loaded;
 }
 
-std::vector<__nv_bfloat16> Storage::to_host() {
-  std::vector<__nv_bfloat16> host_data(elems);
-  CHECK_CUDA(cudaMemcpy(host_data.data(), data, elems * sizeof(__nv_bfloat16),
+template <typename T> std::vector<T> Storage<T>::to_host() {
+  std::vector<T> host_data(elems);
+  CHECK_CUDA(cudaMemcpy(host_data.data(), data, elems * sizeof(T),
                         cudaMemcpyDeviceToHost));
   return host_data;
 }
 
-Tensor Tensor::reshape(std::vector<int> new_shape) const {
+template class Storage<__nv_bfloat16>;
+template class Storage<float>;
+
+template <typename T>
+Tensor<T> Tensor<T>::reshape(std::vector<int> new_shape) const {
   assert(new_shape.size() <= 4 && "invalid dimension");
   assert(std::count(new_shape.begin(), new_shape.end(), -1) <= 1 &&
          "too many unknowns");
@@ -81,7 +89,10 @@ Tensor Tensor::reshape(std::vector<int> new_shape) const {
   return reshaped;
 }
 
-std::map<std::string, Tensor>
+template class Tensor<__nv_bfloat16>;
+template class Tensor<float>;
+
+std::map<std::string, Tensor<__nv_bfloat16>>
 load_from_safetensors(const std::string &filename) {
   std::ifstream file(filename, std::ios::binary | std::ios::ate);
   const auto file_size = file.tellg();
@@ -105,7 +116,7 @@ load_from_safetensors(const std::string &filename) {
   simdjson::dom::parser parser;
   simdjson::dom::element doc = parser.parse(simdjson::padded_string(header));
   simdjson::dom::object object = doc.get_object();
-  std::map<std::string, Tensor> tensors;
+  std::map<std::string, Tensor<__nv_bfloat16>> tensors;
   for (auto [name, specs] : object) {
     if (name == "__metadata__")
       continue;
@@ -120,8 +131,9 @@ load_from_safetensors(const std::string &filename) {
     std::uint64_t offsets_arr[2];
     for (auto [i, offset] : std::views::enumerate(offsets))
       offsets_arr[i] = offset.get_uint64();
-    auto storage = std::make_shared<Storage>(std::move(
-        Storage::load_from_offset(buf.data(), offsets_arr[0], offsets_arr[1])));
+    auto storage = std::make_shared<Storage<__nv_bfloat16>>(
+        std::move(Storage<__nv_bfloat16>::load_from_offset(
+            buf.data(), offsets_arr[0], offsets_arr[1])));
 
     simdjson::dom::array shape = specs["shape"].get_array();
     if (shape.size() > 4)
