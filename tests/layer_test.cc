@@ -112,13 +112,9 @@ TEST(LayerTest, GroupedQueryAttentionVariableLen) {
 
   const auto &expected_out = tensors.at("o_proj");
 
-
-
   const std::size_t num_kv_heads = 2;
 
   const std::size_t groups = 4;
-
-
 
   Dense q_layer = Dense::from_parameters(q_weight, false);
 
@@ -128,13 +124,9 @@ TEST(LayerTest, GroupedQueryAttentionVariableLen) {
 
   Dense o_layer = Dense::from_parameters(o_weight, false);
 
-
-
   GroupedQueryAttention gqa_layer(num_kv_heads, groups, q_layer, k_layer,
 
                                   v_layer, o_layer);
-
-
 
   const auto &q_in = tensors.at("q_in");
 
@@ -144,13 +136,8 @@ TEST(LayerTest, GroupedQueryAttentionVariableLen) {
 
   Tensor<__nv_bfloat16> actual_out = gqa_layer(q_in, k_in, v_in);
 
-
-
   assert_tensors_equal(actual_out, expected_out);
-
 }
-
-
 
 TEST(LayerTest, GroupedQueryAttentionMasked) {
   auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
