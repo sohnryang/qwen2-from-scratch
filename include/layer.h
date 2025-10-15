@@ -6,7 +6,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <vector>
 
 #include <cuda_bf16.h>
 
