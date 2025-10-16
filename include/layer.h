@@ -19,8 +19,8 @@ private:
 public:
   Dense(std::size_t in_features, std::size_t out_features, bool use_activation);
 
-  std::size_t in_features() { return _in_features; }
-  std::size_t out_features() { return _out_features; }
+  std::size_t in_features() const { return _in_features; }
+  std::size_t out_features() const { return _out_features; }
 
   static Dense from_parameters(const Tensor<__nv_bfloat16> &weight,
                                bool use_activation);
@@ -43,6 +43,8 @@ private:
 public:
   RMSNorm(std::size_t dimensions, float epsilon);
 
+  std::size_t dimensions() const { return _dimensions; }
+
   static RMSNorm from_parameter(const Tensor<__nv_bfloat16> &weight,
                                 float epsilon);
 
@@ -64,6 +66,11 @@ public:
   GroupedQueryAttention(std::size_t kv_heads, std::size_t groups,
                         const Dense &q_layer, const Dense &k_layer,
                         const Dense &v_layer, const Dense &o_layer);
+
+  const Dense &q_layer() const { return _q_layer; }
+  const Dense &k_layer() const { return _k_layer; }
+  const Dense &v_layer() const { return _v_layer; }
+  const Dense &o_layer() const { return _o_layer; }
 
   Tensor<__nv_bfloat16> operator()(
       const Tensor<__nv_bfloat16> &input_q,
