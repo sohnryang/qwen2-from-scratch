@@ -105,9 +105,7 @@ RMSNorm::operator()(const Tensor<__nv_bfloat16> &input,
 
 Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const Tensor<__nv_bfloat16> &input_q, const Tensor<__nv_bfloat16> &input_k,
-    const Tensor<__nv_bfloat16> &input_v,
-    std::optional<std::reference_wrapper<const Tensor<__nv_bfloat16>>>
-        input_mask,
+    const Tensor<__nv_bfloat16> &input_v, bool causal_mask,
     std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage,
     std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage,
     std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage,
@@ -140,10 +138,16 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   {
     const dim3 num_blocks(
         ceil_div(scores_out_storage->elems, threads_per_block.x));
-    grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
-        scores_out_storage->data, q_proj.storage->data, k_proj.storage->data,
-        input_mask ? input_mask->get().storage->data : nullptr, batches,
-        sequence_length_q, sequence_length_kv, dimension, _kv_heads, _groups);
+    if (causal_mask)
+      grouped_query_attention_scores_masked<<<num_blocks, threads_per_block>>>(
+          scores_out_storage->data, q_proj.storage->data, k_proj.storage->data,
+          batches, sequence_length_q, sequence_length_kv, dimension, _kv_heads,
+          _groups);
+    else
+      grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
+          scores_out_storage->data, q_proj.storage->data, k_proj.storage->data,
+          batches, sequence_length_q, sequence_length_kv, dimension, _kv_heads,
+          _groups);
   }
   {
     const dim3 num_blocks(ceil_div(

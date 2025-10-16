@@ -163,7 +163,7 @@ TEST(LayerTest, GroupedQueryAttentionMasked) {
   const auto &q_in = tensors.at("q_in");
   const auto &k_in = tensors.at("k_in");
   const auto &v_in = tensors.at("v_in");
-  Tensor<__nv_bfloat16> actual_out = gqa_layer(q_in, k_in, v_in, attn_mask);
+  Tensor<__nv_bfloat16> actual_out = gqa_layer(q_in, k_in, v_in, true);
 
   assert_tensors_equal(actual_out, expected_out);
 }

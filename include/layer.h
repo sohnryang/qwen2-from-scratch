@@ -3,7 +3,6 @@
 #include "tensor.h"
 
 #include <cstddef>
-#include <functional>
 #include <memory>
 #include <optional>
 
@@ -69,9 +68,7 @@ public:
   Tensor<__nv_bfloat16> operator()(
       const Tensor<__nv_bfloat16> &input_q,
       const Tensor<__nv_bfloat16> &input_k,
-      const Tensor<__nv_bfloat16> &input_v,
-      std::optional<std::reference_wrapper<const Tensor<__nv_bfloat16>>>
-          input_mask = {},
+      const Tensor<__nv_bfloat16> &input_v, bool causal_mask = false,
       std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage = nullptr,
       std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage = nullptr,
       std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage = nullptr,
