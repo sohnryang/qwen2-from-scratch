@@ -19,8 +19,25 @@ static void assert_tensors_equal(const Tensor<__nv_bfloat16> &actual,
 
   ASSERT_EQ(actual_host_data.size(), expected_host_data.size());
   for (size_t i = 0; i < actual_host_data.size(); ++i)
+    EXPECT_FLOAT_EQ(__bfloat162float(actual_host_data[i]),
+                    __bfloat162float(expected_host_data[i]))
+        << "at index " << i;
+}
+
+static void assert_tensors_near(const Tensor<__nv_bfloat16> &actual,
+                                const Tensor<__nv_bfloat16> &expected,
+                                float abs_error = 4e-2) {
+  ASSERT_EQ(actual.dimensions, expected.dimensions);
+  for (std::size_t i = 0; i < actual.dimensions; ++i) {
+    ASSERT_EQ(actual.shape[i], expected.shape[i]);
+  }
+  auto actual_host_data = actual.storage->to_host();
+  auto expected_host_data = expected.storage->to_host();
+
+  ASSERT_EQ(actual_host_data.size(), expected_host_data.size());
+  for (size_t i = 0; i < actual_host_data.size(); ++i)
     EXPECT_NEAR(__bfloat162float(actual_host_data[i]),
-                __bfloat162float(expected_host_data[i]), 4e-2)
+                __bfloat162float(expected_host_data[i]), abs_error)
         << "at index " << i;
 }
 
@@ -108,7 +125,7 @@ TEST(LayerTest, Qwen2TransformerBlock) {
 
   Tensor<__nv_bfloat16> actual_out = transformer_block(input, true);
 
-  assert_tensors_equal(actual_out, expected_out);
+  assert_tensors_near(actual_out, expected_out);
 }
 
 TEST(LayerTest, Embedding) {
