@@ -60,6 +60,13 @@ Storage<T> Storage<T>::load_from_offset(const std::uint8_t *buf,
   return loaded;
 }
 
+template <typename T>
+Storage<T>::Storage(const std::vector<T> &host_data) : elems{host_data.size()} {
+  const auto bytes = host_data.size() * sizeof(T);
+  CHECK_CUDA(cudaMalloc((void **)&data, bytes));
+  CHECK_CUDA(cudaMemcpy(data, host_data.data(), bytes, cudaMemcpyHostToDevice));
+}
+
 template <typename T> std::vector<T> Storage<T>::to_host() {
   std::vector<T> host_data(elems);
   CHECK_CUDA(cudaMemcpy(host_data.data(), data, elems * sizeof(T),

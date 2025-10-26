@@ -22,6 +22,7 @@ template <typename T> struct Storage {
   Storage &operator=(Storage &&) noexcept;
 
   Storage(std::size_t elems_);
+  Storage(const std::vector<T> &host_data);
 
   static Storage load_from_offset(const std::uint8_t *buf, std::size_t begin,
                                   std::size_t end);

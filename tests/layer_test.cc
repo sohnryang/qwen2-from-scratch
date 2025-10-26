@@ -123,9 +123,7 @@ TEST(LayerTest, Embedding) {
   for (size_t i = 0; i < input_bf16_host.size(); ++i)
     input_int_host[i] = static_cast<int>(__bfloat162float(input_bf16_host[i]));
 
-  auto storage = std::make_shared<Storage<int>>(Storage<int>::load_from_offset(
-      reinterpret_cast<const uint8_t *>(input_int_host.data()), 0,
-      input_int_host.size() * sizeof(int)));
+  auto storage = std::make_shared<Storage<int>>(input_int_host);
   Tensor<int> input;
   input.storage = storage;
   input.dimensions = input_bf16.dimensions;
