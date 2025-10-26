@@ -57,13 +57,18 @@ class GroupedQueryAttention {
 private:
   std::size_t _kv_heads;
   std::size_t _groups;
+  std::size_t _max_sequence_length;
+  int _encoding_base;
   Dense _q_layer;
   Dense _k_layer;
   Dense _v_layer;
   Dense _o_layer;
+  Tensor<float> _cos_basis;
+  Tensor<float> _sin_basis;
 
 public:
   GroupedQueryAttention(std::size_t kv_heads, std::size_t groups,
+                        std::size_t max_sequence_length, int encoding_base,
                         const Dense &q_layer, const Dense &k_layer,
                         const Dense &v_layer, const Dense &o_layer);
 
@@ -77,7 +82,9 @@ public:
       const Tensor<__nv_bfloat16> &input_k,
       const Tensor<__nv_bfloat16> &input_v, bool causal_mask = false,
       std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> q_proj_rope_out_storage = nullptr,
       std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> k_proj_rope_out_storage = nullptr,
       std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage = nullptr,
       std::shared_ptr<Storage<float>> scores_out_storage = nullptr,
       std::shared_ptr<Storage<__nv_bfloat16>> attention_out_storage = nullptr,

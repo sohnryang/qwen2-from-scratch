@@ -103,11 +103,49 @@ RMSNorm::operator()(const Tensor<__nv_bfloat16> &input,
           .storage = out_storage};
 }
 
+GroupedQueryAttention::GroupedQueryAttention(
+    std::size_t kv_heads, std::size_t groups, std::size_t max_sequence_length,
+    int encoding_base, const Dense &q_layer, const Dense &k_layer,
+    const Dense &v_layer, const Dense &o_layer)
+    : _kv_heads{kv_heads}, _groups{groups},
+      _max_sequence_length{max_sequence_length}, _encoding_base{encoding_base},
+      _q_layer(q_layer), _k_layer(k_layer), _v_layer(v_layer),
+      _o_layer(o_layer),
+      _cos_basis({.shape = {_max_sequence_length,
+                            _k_layer.out_features() / _kv_heads / 2},
+                  .dimensions = 2,
+                  .storage = std::make_shared<Storage<float>>(
+                      _max_sequence_length * _k_layer.out_features() /
+                      _kv_heads / 2)}),
+      _sin_basis({.shape = _cos_basis.shape,
+                  .dimensions = 2,
+                  .storage = std::make_shared<Storage<float>>(
+                      _cos_basis.storage->elems)}) {
+  assert(_k_layer.out_features() == _v_layer.out_features() &&
+         "K and V dimensions mismatch");
+  assert(_q_layer.out_features() % _k_layer.out_features() == 0 &&
+         "Q head count should be multiple of KV head count");
+  assert(_k_layer.out_features() % kv_heads == 0 &&
+         "KV layer output dimension should be multiple of KV heads");
+  assert(_q_layer.out_features() % (kv_heads * groups) == 0 &&
+         "Q layer output dimension should be multiple of Q heads");
+
+  const auto half_dimension = _k_layer.out_features() / _kv_heads / 2;
+  const dim3 threads_per_block(1024);
+  const dim3 num_blocks(
+      ceil_div(_max_sequence_length * half_dimension, threads_per_block.x));
+  precompute_rope_bases<<<num_blocks, threads_per_block>>>(
+      _cos_basis.storage->data, _sin_basis.storage->data, _encoding_base,
+      _max_sequence_length, half_dimension);
+}
+
 Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const Tensor<__nv_bfloat16> &input_q, const Tensor<__nv_bfloat16> &input_k,
     const Tensor<__nv_bfloat16> &input_v, bool causal_mask,
     std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> q_proj_rope_out_storage,
     std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> k_proj_rope_out_storage,
     std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage,
     std::shared_ptr<Storage<float>> scores_out_storage,
     std::shared_ptr<Storage<__nv_bfloat16>> attention_out_storage,
@@ -119,35 +157,68 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   assert(q_proj.dimensions == k_proj.dimensions &&
          k_proj.dimensions == v_proj.dimensions &&
          "QKV dimension should match");
-  assert(k_proj.shape[k_proj.dimensions - 2] ==
+  assert(q_proj.shape[k_proj.dimensions - 2] ==
+             k_proj.shape[v_proj.dimensions - 2] &&
+         k_proj.shape[k_proj.dimensions - 2] ==
              v_proj.shape[v_proj.dimensions - 2] &&
-         "KV sequence length should match");
+         "QKV sequence length should match");
   const auto sequence_length_q = q_proj.shape[q_proj.dimensions - 2];
   const auto sequence_length_kv = k_proj.shape[q_proj.dimensions - 2];
-  assert(k_proj.storage->elems == v_proj.storage->elems &&
-         q_proj.storage->elems / sequence_length_q ==
-             k_proj.storage->elems / sequence_length_kv * _groups &&
-         "QKV element count should match");
   const auto dimension = _k_layer.out_features() / _kv_heads;
+  assert(dimension % 2 == 0 && "Q and K dimension should be even");
   const auto batches =
       k_proj.storage->elems / _k_layer.out_features() / sequence_length_kv;
+  const dim3 threads_per_block(1024);
+  if (!q_proj_rope_out_storage)
+    q_proj_rope_out_storage =
+        std::make_shared<Storage<__nv_bfloat16>>(q_proj.storage->elems);
+  if (!k_proj_rope_out_storage)
+    k_proj_rope_out_storage =
+        std::make_shared<Storage<__nv_bfloat16>>(k_proj.storage->elems);
+  {
+    const dim3 num_blocks(
+        ceil_div(q_proj.storage->elems / 2, threads_per_block.x));
+    rope<<<num_blocks, threads_per_block>>>(
+        q_proj_rope_out_storage->data, q_proj.storage->data,
+        _cos_basis.storage->data, _sin_basis.storage->data, batches,
+        sequence_length_q, _kv_heads * _groups, dimension / 2);
+  }
+  const auto q_proj_rope =
+      Tensor<__nv_bfloat16>{.shape = q_proj.shape,
+                            .dimensions = q_proj.dimensions,
+                            .storage = q_proj_rope_out_storage};
+  {
+    const dim3 num_blocks(
+        ceil_div(k_proj.storage->elems / 2, threads_per_block.x));
+    rope<<<num_blocks, threads_per_block>>>(
+        k_proj_rope_out_storage->data, k_proj.storage->data,
+        _cos_basis.storage->data, _sin_basis.storage->data, batches,
+        sequence_length_kv, _kv_heads, dimension / 2);
+  }
+  const auto k_proj_rope =
+      Tensor<__nv_bfloat16>{.shape = k_proj.shape,
+                            .dimensions = k_proj.dimensions,
+                            .storage = k_proj_rope_out_storage};
+  assert(k_proj_rope.storage->elems == v_proj.storage->elems &&
+         q_proj_rope.storage->elems / sequence_length_q ==
+             k_proj_rope.storage->elems / sequence_length_kv * _groups &&
+         "QKV element count should match");
   if (!scores_out_storage)
     scores_out_storage = std::make_shared<Storage<float>>(
         batches * _kv_heads * _groups * sequence_length_q * sequence_length_kv);
-  const dim3 threads_per_block(1024);
   {
     const dim3 num_blocks(
         ceil_div(scores_out_storage->elems, threads_per_block.x));
     if (causal_mask)
       grouped_query_attention_scores_masked<<<num_blocks, threads_per_block>>>(
-          scores_out_storage->data, q_proj.storage->data, k_proj.storage->data,
-          batches, sequence_length_q, sequence_length_kv, dimension, _kv_heads,
-          _groups);
+          scores_out_storage->data, q_proj_rope.storage->data,
+          k_proj_rope.storage->data, batches, sequence_length_q,
+          sequence_length_kv, dimension, _kv_heads, _groups);
     else
       grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
-          scores_out_storage->data, q_proj.storage->data, k_proj.storage->data,
-          batches, sequence_length_q, sequence_length_kv, dimension, _kv_heads,
-          _groups);
+          scores_out_storage->data, q_proj_rope.storage->data,
+          k_proj_rope.storage->data, batches, sequence_length_q,
+          sequence_length_kv, dimension, _kv_heads, _groups);
   }
   {
     const dim3 num_blocks(ceil_div(

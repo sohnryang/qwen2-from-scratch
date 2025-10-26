@@ -306,3 +306,50 @@ __global__ void grouped_query_attention_output(
         __float2bfloat16(o);
   }
 }
+
+__global__ void precompute_rope_bases(float *__restrict__ cos_basis_out,
+                                      float *__restrict__ sin_basis_out,
+                                      int base, std::size_t max_sequence_length,
+                                      std::size_t half_dimension) {
+  const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto row = idx / half_dimension;
+  const auto col = idx % half_dimension;
+  if (row >= max_sequence_length)
+    return;
+
+  const auto freq = powf(base, -static_cast<float>(col) / half_dimension);
+  cos_basis_out[row * half_dimension + col] = cosf(row * freq);
+  sin_basis_out[row * half_dimension + col] = sinf(row * freq);
+}
+
+__global__ void rope(__nv_bfloat16 *__restrict__ out,
+                     const __nv_bfloat16 *__restrict__ x,
+                     const float *__restrict__ cos_basis,
+                     const float *__restrict__ sin_basis, std::size_t batches,
+                     std::size_t sequence_length, std::size_t heads,
+                     std::size_t half_dimension) {
+  const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto batch = idx / (sequence_length * heads * half_dimension);
+  const auto sequence_idx = idx / (heads * half_dimension) % sequence_length;
+  const auto head = idx / half_dimension % heads;
+  const auto vector_idx1 = idx % half_dimension;
+  const auto vector_idx2 = vector_idx1 + half_dimension;
+  if (batch >= batches)
+    return;
+
+  const auto dimension = 2 * half_dimension;
+  const auto x1_idx = batch * sequence_length * heads * dimension +
+                      sequence_idx * heads * dimension + head * dimension +
+                      vector_idx1;
+  const auto x1 = __bfloat162float(x[x1_idx]);
+  const auto x2_idx = batch * sequence_length * heads * dimension +
+                      sequence_idx * heads * dimension + head * dimension +
+                      vector_idx2;
+  const auto x2 = __bfloat162float(x[x2_idx]);
+  const auto cos_basis_elem =
+      cos_basis[sequence_idx * half_dimension + vector_idx1];
+  const auto sin_basis_elem =
+      sin_basis[sequence_idx * half_dimension + vector_idx1];
+  out[x1_idx] = __float2bfloat16(x1 * cos_basis_elem - x2 * sin_basis_elem);
+  out[x2_idx] = __float2bfloat16(x2 * cos_basis_elem + x1 * sin_basis_elem);
+}
