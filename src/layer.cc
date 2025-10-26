@@ -79,3 +79,19 @@ Qwen2TransformerBlock::Qwen2TransformerBlock(
              _attention_layer.o_layer().out_features() &&
          "attention layer and MLP layer dimensions should match");
 }
+
+Embedding::Embedding(std::size_t table_size, std::size_t dimension)
+    : _table_size{table_size}, _dimension{dimension},
+      _embedding_table{.shape = {table_size, _dimension},
+                       .dimensions = 2,
+                       .storage = std::make_shared<Storage<__nv_bfloat16>>(
+                           _table_size * _dimension)} {}
+
+Embedding
+Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table) {
+  assert(embedding_table.dimensions == 2 &&
+         "invalid embedding table dimension");
+  Embedding embedding(embedding_table.shape[0], embedding_table.shape[1]);
+  embedding._embedding_table = embedding_table;
+  return embedding;
+}

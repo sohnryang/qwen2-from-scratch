@@ -81,3 +81,8 @@ __global__ void rope(__nv_bfloat16 *__restrict__ out,
                      const float *__restrict__ sin_basis, std::size_t batches,
                      std::size_t sequence_length, std::size_t heads,
                      std::size_t half_dimension);
+
+__global__ void lookup_embeddings(
+    __nv_bfloat16 *__restrict__ out, const int *__restrict__ input_ids,
+    const __nv_bfloat16 *__restrict__ embedding_table, std::size_t batches,
+    std::size_t sequence_length, std::size_t dimension);

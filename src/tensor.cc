@@ -69,6 +69,7 @@ template <typename T> std::vector<T> Storage<T>::to_host() {
 
 template class Storage<__nv_bfloat16>;
 template class Storage<float>;
+template class Storage<int>;
 
 template <typename T>
 Tensor<T> Tensor<T>::reshape(std::vector<int> new_shape) const {
@@ -91,6 +92,7 @@ Tensor<T> Tensor<T>::reshape(std::vector<int> new_shape) const {
 
 template class Tensor<__nv_bfloat16>;
 template class Tensor<float>;
+template class Tensor<int>;
 
 std::map<std::string, Tensor<__nv_bfloat16>>
 load_from_safetensors(const std::string &filename) {

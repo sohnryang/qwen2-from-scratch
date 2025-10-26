@@ -307,3 +307,25 @@ Tensor<__nv_bfloat16> Qwen2TransformerBlock::operator()(
   }
   return down_proj_output;
 }
+
+Tensor<__nv_bfloat16>
+Embedding::operator()(const Tensor<int> &input,
+                      std::shared_ptr<Storage<__nv_bfloat16>> out_storage) {
+  if (!out_storage)
+    out_storage = std::make_shared<Storage<__nv_bfloat16>>(
+        input.storage->elems * _dimension);
+
+  const auto sequence_length = input.shape[input.dimensions - 1];
+  const auto batches = input.storage->elems / sequence_length;
+  const dim3 threads_per_block(1024);
+  const dim3 num_blocks(ceil_div(input.storage->elems, threads_per_block.x));
+  lookup_embeddings<<<num_blocks, threads_per_block>>>(
+      out_storage->data, input.storage->data, _embedding_table.storage->data,
+      batches, sequence_length, _dimension);
+
+  auto shape = input.shape;
+  shape[input.dimensions] = _dimension;
+  return {.shape = shape,
+          .dimensions = input.dimensions + 1,
+          .storage = out_storage};
+}

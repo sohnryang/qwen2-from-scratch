@@ -125,3 +125,19 @@ public:
       std::shared_ptr<Storage<__nv_bfloat16>> up_proj_out_storage = nullptr,
       std::shared_ptr<Storage<__nv_bfloat16>> down_proj_out_storage = nullptr);
 };
+
+class Embedding {
+private:
+  std::size_t _table_size;
+  std::size_t _dimension;
+  Tensor<__nv_bfloat16> _embedding_table;
+
+public:
+  Embedding(std::size_t table_size, std::size_t dimension);
+
+  static Embedding from_parameter(const Tensor<__nv_bfloat16> &embedding_table);
+
+  Tensor<__nv_bfloat16>
+  operator()(const Tensor<int> &input,
+             std::shared_ptr<Storage<__nv_bfloat16>> out_storage = nullptr);
+};

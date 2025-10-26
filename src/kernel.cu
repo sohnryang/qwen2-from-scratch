@@ -361,3 +361,19 @@ __global__ void rope(__nv_bfloat16 *__restrict__ out,
   out[x1_idx] = __float2bfloat16(x1 * cos_basis_elem - x2 * sin_basis_elem);
   out[x2_idx] = __float2bfloat16(x2 * cos_basis_elem + x1 * sin_basis_elem);
 }
+
+__global__ void lookup_embeddings(
+    __nv_bfloat16 *__restrict__ out, const int *__restrict__ input_ids,
+    const __nv_bfloat16 *__restrict__ embedding_table, std::size_t batches,
+    std::size_t sequence_length, std::size_t dimension) {
+  const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto batch = idx / sequence_length;
+  const auto sequence_idx = idx % sequence_length;
+  if (batch >= batches)
+    return;
+
+  const auto token_id = input_ids[idx];
+  for (int i = 0; i < dimension; i++)
+    out[batch * sequence_length * dimension + sequence_idx * dimension + i] =
+        embedding_table[token_id * dimension + i];
+}
