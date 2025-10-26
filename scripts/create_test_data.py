@@ -152,6 +152,27 @@ def create_transformer_block_test_file(data_dir: str):
     )
 
 
+def create_embedding_test_file(data_dir: str):
+    table_size = 10
+    dimension = 4
+    embedding_layer = nn.Embedding(table_size, dimension, dtype=torch.bfloat16)
+    embedding_table = torch.arange(
+        table_size * dimension, dtype=torch.bfloat16
+    ).reshape(table_size, dimension)
+    embedding_layer.weight.data = embedding_table
+    input_indices = torch.tensor([[0, 2, 4, 6], [1, 3, 5, 7]], dtype=torch.int)
+    with torch.no_grad():
+        out = embedding_layer(input_indices)
+    save_file(
+        {
+            "embedding_table": embedding_table,
+            "input": input_indices.to(torch.bfloat16),
+            "out": out,
+        },
+        os.path.join(data_dir, "embedding_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -164,3 +185,4 @@ if __name__ == "__main__":
     create_rmsnorm_test_file(parsed.data_dir)
     create_softmax_test_file(parsed.data_dir)
     create_transformer_block_test_file(parsed.data_dir)
+    create_embedding_test_file(parsed.data_dir)

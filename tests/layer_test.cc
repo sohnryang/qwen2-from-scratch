@@ -110,3 +110,30 @@ TEST(LayerTest, Qwen2TransformerBlock) {
 
   assert_tensors_equal(actual_out, expected_out);
 }
+
+TEST(LayerTest, Embedding) {
+  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
+                                       "/embedding_test.safetensors");
+  const auto &embedding_table = tensors.at("embedding_table");
+  const auto &expected_out = tensors.at("out");
+  const auto &input_bf16 = tensors.at("input");
+
+  auto input_bf16_host = input_bf16.storage->to_host();
+  std::vector<int> input_int_host(input_bf16_host.size());
+  for (size_t i = 0; i < input_bf16_host.size(); ++i)
+    input_int_host[i] = static_cast<int>(__bfloat162float(input_bf16_host[i]));
+
+  auto storage = std::make_shared<Storage<int>>(Storage<int>::load_from_offset(
+      reinterpret_cast<const uint8_t *>(input_int_host.data()), 0,
+      input_int_host.size() * sizeof(int)));
+  Tensor<int> input;
+  input.storage = storage;
+  input.dimensions = input_bf16.dimensions;
+  input.shape = input_bf16.shape;
+
+  Embedding embedding_layer = Embedding::from_parameter(embedding_table);
+
+  Tensor<__nv_bfloat16> actual_out = embedding_layer(input);
+
+  assert_tensors_equal(actual_out, expected_out);
+}
