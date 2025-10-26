@@ -55,3 +55,27 @@ RMSNorm RMSNorm::from_parameter(const Tensor<__nv_bfloat16> &weight,
   return rmsnorm;
 }
 
+Qwen2TransformerBlock::Qwen2TransformerBlock(
+    const RMSNorm &input_norm_layer,
+    const GroupedQueryAttention &attention_layer,
+    const RMSNorm &post_attention_norm_layer, const Dense &gate_proj_layer,
+    const Dense &up_proj_layer, const Dense &down_proj_layer)
+    : _input_norm_layer(input_norm_layer), _attention_layer(attention_layer),
+      _post_attention_norm_layer(post_attention_norm_layer),
+      _gate_proj_layer(gate_proj_layer), _up_proj_layer(up_proj_layer),
+      _down_proj_layer(down_proj_layer) {
+  assert(_input_norm_layer.dimensions() ==
+             _attention_layer.q_layer().in_features() &&
+         _input_norm_layer.dimensions() ==
+             _attention_layer.k_layer().in_features() &&
+         _input_norm_layer.dimensions() ==
+             _attention_layer.v_layer().in_features() &&
+         "QKV layers and input RMSNorm dimensions should match");
+  assert(_attention_layer.o_layer().out_features() ==
+             _gate_proj_layer.in_features() &&
+         _gate_proj_layer.out_features() == _up_proj_layer.out_features() &&
+         _gate_proj_layer.out_features() == _down_proj_layer.in_features() &&
+         _down_proj_layer.out_features() ==
+             _attention_layer.o_layer().out_features() &&
+         "attention layer and MLP layer dimensions should match");
+}

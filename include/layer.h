@@ -90,3 +90,38 @@ public:
       std::shared_ptr<Storage<__nv_bfloat16>> attention_out_storage = nullptr,
       std::shared_ptr<Storage<__nv_bfloat16>> o_proj_out_storage = nullptr);
 };
+
+class Qwen2TransformerBlock {
+private:
+  RMSNorm _input_norm_layer;
+  GroupedQueryAttention _attention_layer;
+  RMSNorm _post_attention_norm_layer;
+  Dense _gate_proj_layer;
+  Dense _up_proj_layer;
+  Dense _down_proj_layer;
+
+public:
+  Qwen2TransformerBlock(const RMSNorm &input_norm_layer,
+                        const GroupedQueryAttention &attention_layer,
+                        const RMSNorm &post_attention_norm_layer,
+                        const Dense &gate_proj_layer,
+                        const Dense &up_proj_layer,
+                        const Dense &down_proj_layer);
+
+  Tensor<__nv_bfloat16> operator()(
+      const Tensor<__nv_bfloat16> &input, bool causal_mask = true,
+      std::shared_ptr<Storage<__nv_bfloat16>> input_norm_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> q_proj_rope_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> k_proj_rope_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<float>> scores_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> attention_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> o_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> post_attention_norm_out_storage =
+          nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> gate_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> up_proj_out_storage = nullptr,
+      std::shared_ptr<Storage<__nv_bfloat16>> down_proj_out_storage = nullptr);
+};

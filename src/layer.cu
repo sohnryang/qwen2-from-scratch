@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <functional>
 #include <memory>
 
 #include <cuda_bf16.h>
@@ -246,4 +245,65 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
                     static_cast<int>(_kv_heads * _groups * dimension)}),
       o_proj_out_storage);
   return o_proj;
+}
+
+Tensor<__nv_bfloat16> Qwen2TransformerBlock::operator()(
+    const Tensor<__nv_bfloat16> &input, bool causal_mask,
+    std::shared_ptr<Storage<__nv_bfloat16>> input_norm_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> q_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> q_proj_rope_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> k_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> k_proj_rope_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> v_proj_out_storage,
+    std::shared_ptr<Storage<float>> scores_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> attention_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> o_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> post_attention_norm_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> gate_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> up_proj_out_storage,
+    std::shared_ptr<Storage<__nv_bfloat16>> down_proj_out_storage) {
+  const auto input_normalized =
+      _input_norm_layer(input, input_norm_out_storage);
+  const auto attention_output = _attention_layer(
+      input_normalized, input_normalized, input_normalized, causal_mask,
+      q_proj_out_storage, q_proj_rope_out_storage, k_proj_out_storage,
+      k_proj_rope_out_storage, v_proj_out_storage, scores_out_storage,
+      attention_out_storage, o_proj_out_storage);
+  assert(input.shape == attention_output.shape &&
+         "input and attention output shape should match");
+  const dim3 threads_per_block(1024);
+  {
+    const dim3 num_blocks(
+        ceil_div(attention_output.storage->elems, threads_per_block.x));
+    elementwise_add<<<num_blocks, threads_per_block>>>(
+        attention_output.storage->data, attention_output.storage->data,
+        input.storage->data, attention_output.storage->elems);
+  }
+  const auto attention_output_normalized = _post_attention_norm_layer(
+      attention_output, post_attention_norm_out_storage);
+  const auto gate_proj_output =
+      _gate_proj_layer(attention_output_normalized, gate_proj_out_storage);
+  const auto up_proj_output =
+      _up_proj_layer(attention_output_normalized, up_proj_out_storage);
+  assert(gate_proj_output.shape == up_proj_output.shape &&
+         "gate and up projection shape should match");
+  {
+    const dim3 num_blocks(
+        ceil_div(gate_proj_output.storage->elems, threads_per_block.x));
+    elementwise_product<<<num_blocks, threads_per_block>>>(
+        gate_proj_output.storage->data, gate_proj_output.storage->data,
+        up_proj_output.storage->data, 1.0f, gate_proj_output.storage->elems);
+  }
+  const auto down_proj_output =
+      _down_proj_layer(gate_proj_output, down_proj_out_storage);
+  assert(down_proj_output.shape == attention_output.shape &&
+         "down projection and attention output shape should match");
+  {
+    const dim3 num_blocks(
+        ceil_div(down_proj_output.storage->elems, threads_per_block.x));
+    elementwise_add<<<num_blocks, threads_per_block>>>(
+        down_proj_output.storage->data, down_proj_output.storage->data,
+        attention_output.storage->data, down_proj_output.storage->elems);
+  }
+  return down_proj_output;
 }
