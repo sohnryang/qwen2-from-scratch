@@ -1,10 +1,12 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # dependencies = [
+#     "accelerate",
 #     "numpy",
 #     "packaging",
 #     "safetensors",
 #     "torch",
+#     "transformers",
 # ]
 #
 # [[tool.uv.index]]
@@ -14,6 +16,7 @@ import argparse
 import os
 
 import torch
+import transformers
 from safetensors.torch import save_file
 from torch import nn
 
@@ -105,6 +108,48 @@ def create_softmax_test_file(data_dir: str):
     )
 
 
+def create_transformer_block_test_file(data_dir: str):
+    tokenizer = transformers.AutoTokenizer.from_pretrained("Qwen/Qwen2-1.5B-Instruct")
+    model = transformers.AutoModelForCausalLM.from_pretrained(
+        "Qwen/Qwen2-1.5B-Instruct", dtype="auto", device_map="auto"
+    )
+    prompt = "How do I write inference kernels for Qwen2 model in CUDA, from scratch?"
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": prompt},
+    ]
+    text = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+    with torch.no_grad():
+        model_outputs = model(
+            **model_inputs, use_cache=False, output_hidden_states=True
+        )
+
+    weights = dict(model.named_parameters())
+    save_file(
+        {
+            "input_norm_weight": weights["model.layers.0.input_layernorm.weight"],
+            "q_weight": weights["model.layers.0.self_attn.q_proj.weight"],
+            "q_bias": weights["model.layers.0.self_attn.q_proj.bias"],
+            "k_weight": weights["model.layers.0.self_attn.k_proj.weight"],
+            "k_bias": weights["model.layers.0.self_attn.k_proj.bias"],
+            "v_weight": weights["model.layers.0.self_attn.v_proj.weight"],
+            "v_bias": weights["model.layers.0.self_attn.v_proj.bias"],
+            "o_weight": weights["model.layers.0.self_attn.o_proj.weight"],
+            "post_norm_weight": weights[
+                "model.layers.0.post_attention_layernorm.weight"
+            ],
+            "gate_proj_weight": weights["model.layers.0.mlp.gate_proj.weight"],
+            "up_proj_weight": weights["model.layers.0.mlp.up_proj.weight"],
+            "down_proj_weight": weights["model.layers.0.mlp.down_proj.weight"],
+            "in": model_outputs[1][0],
+            "out": model_outputs[1][1],
+        },
+        os.path.join(data_dir, "transformer_block_test.safetensors"),
+    )
 
 
 if __name__ == "__main__":
@@ -118,3 +163,4 @@ if __name__ == "__main__":
     create_reshape_test_file(parsed.data_dir)
     create_rmsnorm_test_file(parsed.data_dir)
     create_softmax_test_file(parsed.data_dir)
+    create_transformer_block_test_file(parsed.data_dir)
