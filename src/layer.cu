@@ -15,16 +15,13 @@ Dense::operator()(const Tensor<__nv_bfloat16> &input,
                   std::shared_ptr<Storage<__nv_bfloat16>> out_storage) {
   assert(input.shape[input.dimensions - 1] == _in_features &&
          "invalid input dimension");
-  const auto batches = input.storage->elems / _in_features;
+  const auto batches = input.elems() / _in_features;
   const auto out_elems = batches * _out_features;
   if (out_storage)
-    assert(out_storage->elems ==
-               input.storage->elems / _in_features * _out_features &&
-           "invalid output storage size");
-
-  out_storage = out_storage
-                    ? out_storage
-                    : std::make_shared<Storage<__nv_bfloat16>>(out_elems);
+    assert(out_storage->elems < out_elems &&
+           "insufficient output storage size");
+  else
+    out_storage = std::make_shared<Storage<__nv_bfloat16>>(out_elems);
   const dim3 threads_per_block(16, 16);
   const dim3 num_blocks(ceil_div(batches, threads_per_block.x),
                         ceil_div(_out_features, threads_per_block.y));
@@ -51,15 +48,12 @@ RMSNorm::operator()(const Tensor<__nv_bfloat16> &input,
                     std::shared_ptr<Storage<__nv_bfloat16>> out_storage) {
   assert(input.shape[input.dimensions - 1] == _dimensions &&
          "invalid input dimension");
-  const auto batches = input.storage->elems / _dimensions;
+  const auto batches = input.elems() / _dimensions;
   if (out_storage)
-    assert(out_storage->elems == input.storage->elems &&
-           "invalid output storage size");
-
-  out_storage =
-      out_storage
-          ? out_storage
-          : std::make_shared<Storage<__nv_bfloat16>>(input.storage->elems);
+    assert(out_storage->elems < input.elems() &&
+           "insufficient output storage size");
+  else
+    out_storage = std::make_shared<Storage<__nv_bfloat16>>(input.elems());
 
   Tensor<__nv_bfloat16> reshaped =
       input.reshape({-1, static_cast<int>(_dimensions)});
@@ -116,10 +110,10 @@ GroupedQueryAttention::GroupedQueryAttention(
                   .storage = std::make_shared<Storage<float>>(
                       _max_sequence_length * _k_layer.out_features() /
                       _kv_heads / 2)}),
-      _sin_basis({.shape = _cos_basis.shape,
-                  .dimensions = 2,
-                  .storage = std::make_shared<Storage<float>>(
-                      _cos_basis.storage->elems)}) {
+      _sin_basis(
+          {.shape = _cos_basis.shape,
+           .dimensions = 2,
+           .storage = std::make_shared<Storage<float>>(_cos_basis.elems())}) {
   assert(_k_layer.out_features() == _v_layer.out_features() &&
          "K and V dimensions mismatch");
   assert(_q_layer.out_features() % _k_layer.out_features() == 0 &&
@@ -166,17 +160,16 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   const auto dimension = _k_layer.out_features() / _kv_heads;
   assert(dimension % 2 == 0 && "Q and K dimension should be even");
   const auto batches =
-      k_proj.storage->elems / _k_layer.out_features() / sequence_length_kv;
+      k_proj.elems() / _k_layer.out_features() / sequence_length_kv;
   const dim3 threads_per_block(1024);
   if (!q_proj_rope_out_storage)
     q_proj_rope_out_storage =
-        std::make_shared<Storage<__nv_bfloat16>>(q_proj.storage->elems);
+        std::make_shared<Storage<__nv_bfloat16>>(q_proj.elems());
   if (!k_proj_rope_out_storage)
     k_proj_rope_out_storage =
-        std::make_shared<Storage<__nv_bfloat16>>(k_proj.storage->elems);
+        std::make_shared<Storage<__nv_bfloat16>>(k_proj.elems());
   {
-    const dim3 num_blocks(
-        ceil_div(q_proj.storage->elems / 2, threads_per_block.x));
+    const dim3 num_blocks(ceil_div(q_proj.elems() / 2, threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
         q_proj_rope_out_storage->data, q_proj.storage->data,
         _cos_basis.storage->data, _sin_basis.storage->data, batches,
@@ -187,8 +180,7 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
                             .dimensions = q_proj.dimensions,
                             .storage = q_proj_rope_out_storage};
   {
-    const dim3 num_blocks(
-        ceil_div(k_proj.storage->elems / 2, threads_per_block.x));
+    const dim3 num_blocks(ceil_div(k_proj.elems() / 2, threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
         k_proj_rope_out_storage->data, k_proj.storage->data,
         _cos_basis.storage->data, _sin_basis.storage->data, batches,
@@ -198,9 +190,9 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
       Tensor<__nv_bfloat16>{.shape = k_proj.shape,
                             .dimensions = k_proj.dimensions,
                             .storage = k_proj_rope_out_storage};
-  assert(k_proj_rope.storage->elems == v_proj.storage->elems &&
-         q_proj_rope.storage->elems / sequence_length_q ==
-             k_proj_rope.storage->elems / sequence_length_kv * _groups &&
+  assert(k_proj_rope.elems() == v_proj.elems() &&
+         q_proj_rope.elems() / sequence_length_q ==
+             k_proj_rope.elems() / sequence_length_kv * _groups &&
          "QKV element count should match");
   if (!scores_out_storage)
     scores_out_storage = std::make_shared<Storage<float>>(
@@ -274,10 +266,10 @@ Tensor<__nv_bfloat16> Qwen2TransformerBlock::operator()(
   const dim3 threads_per_block(1024);
   {
     const dim3 num_blocks(
-        ceil_div(attention_output.storage->elems, threads_per_block.x));
+        ceil_div(attention_output.elems(), threads_per_block.x));
     elementwise_add<<<num_blocks, threads_per_block>>>(
         attention_output.storage->data, attention_output.storage->data,
-        input.storage->data, attention_output.storage->elems);
+        input.storage->data, attention_output.elems());
   }
   const auto attention_output_normalized = _post_attention_norm_layer(
       attention_output, post_attention_norm_out_storage);
@@ -289,10 +281,10 @@ Tensor<__nv_bfloat16> Qwen2TransformerBlock::operator()(
          "gate and up projection shape should match");
   {
     const dim3 num_blocks(
-        ceil_div(gate_proj_output.storage->elems, threads_per_block.x));
+        ceil_div(gate_proj_output.elems(), threads_per_block.x));
     elementwise_product<<<num_blocks, threads_per_block>>>(
         gate_proj_output.storage->data, gate_proj_output.storage->data,
-        up_proj_output.storage->data, 1.0f, gate_proj_output.storage->elems);
+        up_proj_output.storage->data, 1.0f, gate_proj_output.elems());
   }
   const auto down_proj_output =
       _down_proj_layer(gate_proj_output, down_proj_out_storage);
@@ -300,10 +292,10 @@ Tensor<__nv_bfloat16> Qwen2TransformerBlock::operator()(
          "down projection and attention output shape should match");
   {
     const dim3 num_blocks(
-        ceil_div(down_proj_output.storage->elems, threads_per_block.x));
+        ceil_div(down_proj_output.elems(), threads_per_block.x));
     elementwise_add<<<num_blocks, threads_per_block>>>(
         down_proj_output.storage->data, down_proj_output.storage->data,
-        attention_output.storage->data, down_proj_output.storage->elems);
+        attention_output.storage->data, down_proj_output.elems());
   }
   return down_proj_output;
 }
@@ -312,13 +304,13 @@ Tensor<__nv_bfloat16>
 Embedding::operator()(const Tensor<int> &input,
                       std::shared_ptr<Storage<__nv_bfloat16>> out_storage) {
   if (!out_storage)
-    out_storage = std::make_shared<Storage<__nv_bfloat16>>(
-        input.storage->elems * _dimension);
+    out_storage =
+        std::make_shared<Storage<__nv_bfloat16>>(input.elems() * _dimension);
 
   const auto sequence_length = input.shape[input.dimensions - 1];
-  const auto batches = input.storage->elems / sequence_length;
+  const auto batches = input.elems() / sequence_length;
   const dim3 threads_per_block(1024);
-  const dim3 num_blocks(ceil_div(input.storage->elems, threads_per_block.x));
+  const dim3 num_blocks(ceil_div(input.elems(), threads_per_block.x));
   lookup_embeddings<<<num_blocks, threads_per_block>>>(
       out_storage->data, input.storage->data, _embedding_table.storage->data,
       batches, sequence_length, _dimension);

@@ -36,6 +36,8 @@ template <typename T> struct Tensor {
   std::shared_ptr<Storage<T>> storage;
 
   Tensor reshape(std::vector<int> new_shape) const;
+
+  std::size_t elems() const;
 };
 
 std::map<std::string, Tensor<__nv_bfloat16>>

@@ -97,6 +97,13 @@ Tensor<T> Tensor<T>::reshape(std::vector<int> new_shape) const {
   return reshaped;
 }
 
+template <typename T> std::size_t Tensor<T>::elems() const {
+  std::size_t res = 1;
+  for (int i = 0; i < dimensions; i++)
+    res *= shape[i];
+  return res;
+}
+
 template class Tensor<__nv_bfloat16>;
 template class Tensor<float>;
 template class Tensor<int>;
