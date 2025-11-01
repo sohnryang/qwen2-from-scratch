@@ -36,8 +36,8 @@ target_link_libraries(qwen2kern PRIVATE simdjson)
 set_property(TARGET qwen2kern PROPERTY CUDA_ARCHITECTURES 89)
 
 # Main executable
-add_executable(app src/main.cc)
-target_link_libraries(app PRIVATE qwen2kern)
+add_executable(qwen2chat src/main.cc)
+target_link_libraries(qwen2chat PRIVATE qwen2kern)
 
 # Unit tests
 enable_testing()
