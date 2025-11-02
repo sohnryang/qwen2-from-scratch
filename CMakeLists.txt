@@ -27,6 +27,13 @@ FetchContent_Declare(
   URL https://github.com/simdjson/simdjson/archive/refs/tags/v4.0.7.zip)
 FetchContent_MakeAvailable(simdjson)
 
+# tokenizers-cpp
+FetchContent_Declare(
+  tokenizers-cpp
+  GIT_REPOSITORY https://github.com/mlc-ai/tokenizers-cpp
+  GIT_TAG 55d53aa38dc8df7d9c8bd9ed50907e82ae83ce66)
+FetchContent_MakeAvailable(tokenizers-cpp)
+
 # Kernel library
 set(KERNEL_SRCS src/tensor.cc src/kernel.cu src/layer.cc src/layer.cu)
 add_library(qwen2kern STATIC ${KERNEL_SRCS})
@@ -37,7 +44,10 @@ set_property(TARGET qwen2kern PROPERTY CUDA_ARCHITECTURES 89)
 
 # Main executable
 add_executable(qwen2chat src/main.cc)
-target_link_libraries(qwen2chat PRIVATE qwen2kern)
+target_link_libraries(
+  qwen2chat
+  PRIVATE qwen2kern
+  PRIVATE tokenizers_cpp)
 
 # Unit tests
 enable_testing()
