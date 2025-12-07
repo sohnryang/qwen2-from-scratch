@@ -87,12 +87,13 @@ Tensor<T> Tensor<T>::reshape(std::vector<int> new_shape) const {
   for (auto n : new_shape)
     if (n != -1)
       elems_per_unknown_axis *= n;
-  assert(storage->elems % elems_per_unknown_axis == 0 && "invalid new shape");
+  const auto elem_count = elems();
+  assert(elem_count % elems_per_unknown_axis == 0 && "invalid new shape");
 
   Tensor reshaped = {.dimensions = new_shape.size(), .storage = storage};
   std::transform(new_shape.begin(), new_shape.end(), reshaped.shape.begin(),
                  [&](auto n) {
-                   return n == -1 ? storage->elems / elems_per_unknown_axis : n;
+                   return n == -1 ? elem_count / elems_per_unknown_axis : n;
                  });
   return reshaped;
 }
