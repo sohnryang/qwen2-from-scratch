@@ -159,8 +159,6 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   const auto sequence_length_kv = k_proj.shape[q_proj.dimensions - 2];
   const auto dimension = _k_layer.out_features() / _kv_heads;
   assert(dimension % 2 == 0 && "Q and K dimension should be even");
-  const auto batches =
-      k_proj.elems() / _k_layer.out_features() / sequence_length_kv;
   const dim3 threads_per_block(1024);
   if (!q_proj_rope_out_storage)
     q_proj_rope_out_storage =
@@ -172,8 +170,8 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const dim3 num_blocks(ceil_div(q_proj.elems() / 2, threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
         q_proj_rope_out_storage->data, q_proj.storage->data,
-        _cos_basis.storage->data, _sin_basis.storage->data, batches,
-        sequence_length_q, _kv_heads * _groups, dimension / 2);
+        _cos_basis.storage->data, _sin_basis.storage->data, sequence_length_q,
+        _kv_heads * _groups, dimension / 2);
   }
   const auto q_proj_rope =
       Tensor<__nv_bfloat16>{.shape = q_proj.shape,
@@ -183,8 +181,8 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const dim3 num_blocks(ceil_div(k_proj.elems() / 2, threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
         k_proj_rope_out_storage->data, k_proj.storage->data,
-        _cos_basis.storage->data, _sin_basis.storage->data, batches,
-        sequence_length_kv, _kv_heads, dimension / 2);
+        _cos_basis.storage->data, _sin_basis.storage->data, sequence_length_kv,
+        _kv_heads, dimension / 2);
   }
   const auto k_proj_rope =
       Tensor<__nv_bfloat16>{.shape = k_proj.shape,
@@ -196,20 +194,20 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
          "QKV element count should match");
   if (!scores_out_storage)
     scores_out_storage = std::make_shared<Storage<float>>(
-        batches * _kv_heads * _groups * sequence_length_q * sequence_length_kv);
+        _kv_heads * _groups * sequence_length_q * sequence_length_kv);
   {
     const dim3 num_blocks(
         ceil_div(scores_out_storage->elems, threads_per_block.x));
     if (causal_mask)
       grouped_query_attention_scores_masked<<<num_blocks, threads_per_block>>>(
           scores_out_storage->data, q_proj_rope.storage->data,
-          k_proj_rope.storage->data, batches, sequence_length_q,
-          sequence_length_kv, dimension, _kv_heads, _groups);
+          k_proj_rope.storage->data, sequence_length_q, sequence_length_kv,
+          dimension, _kv_heads, _groups);
     else
       grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
           scores_out_storage->data, q_proj_rope.storage->data,
-          k_proj_rope.storage->data, batches, sequence_length_q,
-          sequence_length_kv, dimension, _kv_heads, _groups);
+          k_proj_rope.storage->data, sequence_length_q, sequence_length_kv,
+          dimension, _kv_heads, _groups);
   }
   {
     const dim3 num_blocks(ceil_div(
@@ -220,20 +218,19 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   }
   if (!attention_out_storage)
     attention_out_storage = std::make_shared<Storage<__nv_bfloat16>>(
-        batches * _kv_heads * _groups * sequence_length_q * dimension);
+        _kv_heads * _groups * sequence_length_q * dimension);
   {
     const dim3 num_blocks(ceil_div(attention_out_storage->elems, 1024));
     grouped_query_attention_output<<<num_blocks, threads_per_block>>>(
         attention_out_storage->data, scores_out_storage->data,
-        v_proj.storage->data, batches, sequence_length_q, sequence_length_kv,
-        dimension, _kv_heads, _groups);
+        v_proj.storage->data, sequence_length_q, sequence_length_kv, dimension,
+        _kv_heads, _groups);
   }
   const auto o_proj = _o_layer(
       Tensor<__nv_bfloat16>{.shape = {attention_out_storage->elems},
                             .dimensions = 1,
                             .storage = attention_out_storage}
-          .reshape({static_cast<int>(batches),
-                    static_cast<int>(sequence_length_q),
+          .reshape({static_cast<int>(sequence_length_q),
                     static_cast<int>(_kv_heads * _groups * dimension)}),
       o_proj_out_storage);
   return o_proj;
@@ -307,13 +304,12 @@ Embedding::operator()(const Tensor<int> &input,
     out_storage =
         std::make_shared<Storage<__nv_bfloat16>>(input.elems() * _dimension);
 
-  const auto sequence_length = input.shape[input.dimensions - 1];
-  const auto batches = input.elems() / sequence_length;
+  const auto sequence_length = input.elems();
   const dim3 threads_per_block(1024);
   const dim3 num_blocks(ceil_div(input.elems(), threads_per_block.x));
   lookup_embeddings<<<num_blocks, threads_per_block>>>(
       out_storage->data, input.storage->data, _embedding_table.storage->data,
-      batches, sequence_length, _dimension);
+      sequence_length, _dimension);
 
   auto shape = input.shape;
   shape[input.dimensions] = _dimension;

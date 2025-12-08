@@ -145,8 +145,8 @@ def create_transformer_block_test_file(data_dir: str):
             "gate_proj_weight": weights["model.layers.0.mlp.gate_proj.weight"],
             "up_proj_weight": weights["model.layers.0.mlp.up_proj.weight"],
             "down_proj_weight": weights["model.layers.0.mlp.down_proj.weight"],
-            "in": model_outputs[1][0],
-            "out": model_outputs[1][1],
+            "in": model_outputs[1][0].squeeze(0),
+            "out": model_outputs[1][1].squeeze(0),
         },
         os.path.join(data_dir, "transformer_block_test.safetensors"),
     )
