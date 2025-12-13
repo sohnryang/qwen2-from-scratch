@@ -40,10 +40,11 @@ load_tokenizer(const std::string &filename) {
 int main(int argc, char **argv) {
   std::string weights_filename, tokenizer_filename, input_filename,
       system_prompt = "You're a helpful assistant.";
+  std::size_t max_sequence_length = 128;
 #if __has_include(<unistd.h>)
   int next_option;
   do {
-    next_option = getopt(argc, argv, "w:t:i:p:h");
+    next_option = getopt(argc, argv, "w:t:i:p:l:h");
     switch (next_option) {
     case 'w':
       weights_filename = optarg;
@@ -56,6 +57,9 @@ int main(int argc, char **argv) {
       continue;
     case 'p':
       system_prompt = optarg;
+      continue;
+    case 'l':
+      max_sequence_length = std::stoi(optarg);
       continue;
     case '?':
     case 'h':
@@ -74,9 +78,8 @@ int main(int argc, char **argv) {
     std::cin >> tokenizer_filename;
   }
 
-  constexpr std::size_t MAX_TOKENS = 128;
   const auto model_weights = load_from_safetensors(weights_filename);
-  auto model = Qwen2Model::from_parameters(model_weights, MAX_TOKENS);
+  auto model = Qwen2Model::from_parameters(model_weights, max_sequence_length);
 
   const auto tokenizer = load_tokenizer(tokenizer_filename);
 
