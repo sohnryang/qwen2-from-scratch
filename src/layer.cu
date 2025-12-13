@@ -285,11 +285,10 @@ Tensor<__nv_bfloat16> Embedding::operator()(const Tensor<int> &input) {
 }
 
 Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits) {
-  assert(logits.dimensions == 2 && "logits should be (batch, vocab)");
-  assert(logits.shape[1] == _vocab_size &&
+  assert(logits.shape[logits.dimensions - 1] == _vocab_size &&
          "vocab dimension should match sampler");
 
-  const auto batches = logits.shape[0];
+  const auto batches = logits.dimensions > 1 ? logits.shape[0] : 1;
   const std::size_t threads_per_block = 1024;
   std::size_t blocks = ceil_div(_vocab_size, threads_per_block);
 
