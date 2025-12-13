@@ -293,10 +293,15 @@ Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits) {
   const std::size_t threads_per_block = 1024;
   std::size_t blocks = ceil_div(_vocab_size, threads_per_block);
 
-  auto current_vals = std::make_shared<Storage<float>>(
-      blocks * static_cast<std::size_t>(batches));
-  auto current_indices = std::make_shared<Storage<int>>(
-      blocks * static_cast<std::size_t>(batches));
+  if (!_vals_storage || _vals_storage->elems < blocks * batches)
+    _vals_storage = std::make_shared<Storage<float>>(
+        blocks * static_cast<std::size_t>(batches));
+  if (!_indices_storage || _indices_storage->elems < blocks * batches)
+    _indices_storage = std::make_shared<Storage<int>>(
+        blocks * static_cast<std::size_t>(batches));
+
+  auto current_vals = _vals_storage;
+  auto current_indices = _indices_storage;
   const auto shared_bytes = threads_per_block * (sizeof(float) + sizeof(int));
   argmax_first<<<dim3(blocks, batches), threads_per_block, shared_bytes>>>(
       logits.storage->data, current_vals->data, current_indices->data,
@@ -304,10 +309,16 @@ Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits) {
 
   while (blocks > 1) {
     const auto next_blocks = ceil_div(blocks, threads_per_block);
-    auto next_vals = std::make_shared<Storage<float>>(
-        next_blocks * static_cast<std::size_t>(batches));
-    auto next_indices = std::make_shared<Storage<int>>(
-        next_blocks * static_cast<std::size_t>(batches));
+    if (!_vals_storage_next ||
+        _vals_storage_next->elems < next_blocks * batches)
+      _vals_storage_next = std::make_shared<Storage<float>>(
+          next_blocks * static_cast<std::size_t>(batches));
+    if (!_indices_storage_next ||
+        _indices_storage_next->elems < next_blocks * batches)
+      _indices_storage_next = std::make_shared<Storage<int>>(
+          next_blocks * static_cast<std::size_t>(batches));
+    auto next_vals = _vals_storage_next;
+    auto next_indices = _indices_storage_next;
     argmax_reduce<<<dim3(next_blocks, batches), threads_per_block,
                     shared_bytes>>>(current_vals->data, current_indices->data,
                                     next_vals->data, next_indices->data,
@@ -339,8 +350,5 @@ LmHeadDense::operator()(const Tensor<__nv_bfloat16> &input) {
   gemm_transposed<<<num_blocks, threads_per_block>>>(
       _out_storage->data, last_token, _weight.storage->data, nullptr, 1.0f, 1,
       _out_features, _in_features);
-
-  Tensor<__nv_bfloat16> res = {.dimensions = 1, .storage = _out_storage};
-  res.shape[0] = _out_features;
-  return res;
+  return {.shape = {_out_features}, .dimensions = 1, .storage = _out_storage};
 }

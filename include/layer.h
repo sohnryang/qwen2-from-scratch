@@ -145,6 +145,10 @@ class Sampler {
 private:
   std::size_t _vocab_size;
   std::shared_ptr<Storage<int>> _out_storage;
+  std::shared_ptr<Storage<float>> _vals_storage;
+  std::shared_ptr<Storage<float>> _vals_storage_next;
+  std::shared_ptr<Storage<int>> _indices_storage;
+  std::shared_ptr<Storage<int>> _indices_storage_next;
 
 public:
   explicit Sampler(std::size_t vocab_size);

@@ -111,8 +111,9 @@ Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
 }
 
 Sampler::Sampler(std::size_t vocab_size)
-    : _vocab_size{vocab_size}, _out_storage(std::make_shared<Storage<int>>(1)) {
-}
+    : _vocab_size{vocab_size}, _out_storage(std::make_shared<Storage<int>>(1)),
+      _vals_storage{}, _vals_storage_next{}, _indices_storage{},
+      _indices_storage_next{} {}
 
 LmHeadDense::LmHeadDense(std::size_t in_features, std::size_t out_features)
     : _in_features{in_features}, _out_features{out_features},
