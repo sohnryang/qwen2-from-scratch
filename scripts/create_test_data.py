@@ -173,6 +173,21 @@ def create_embedding_test_file(data_dir: str):
     )
 
 
+def create_sampler_test_file(data_dir: str):
+    logits = torch.tensor(
+        [
+            [0.1, 0.2, 0.9, -0.5, -1.0],
+            [5.0, 3.0, -3.0, 4.0, 2.0],
+        ],
+        dtype=torch.bfloat16,
+    )
+    expected = torch.argmax(logits, dim=-1).to(torch.bfloat16)
+    save_file(
+        {"logits": logits, "expected": expected},
+        os.path.join(data_dir, "sampler_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -186,3 +201,4 @@ if __name__ == "__main__":
     create_softmax_test_file(parsed.data_dir)
     create_transformer_block_test_file(parsed.data_dir)
     create_embedding_test_file(parsed.data_dir)
+    create_sampler_test_file(parsed.data_dir)

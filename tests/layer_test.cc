@@ -167,3 +167,25 @@ TEST(LayerTest, Embedding) {
 
   assert_tensors_equal(actual_out, expected_out);
 }
+
+TEST(LayerTest, Sampler) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "sampler_test.safetensors").string());
+  const auto &logits = tensors.at("logits");
+  const auto &expected_out = tensors.at("expected");
+
+  Sampler sampler(logits.shape[1]);
+
+  Tensor<int> actual_out = sampler(logits);
+
+  ASSERT_EQ(actual_out.dimensions, expected_out.dimensions);
+  ASSERT_EQ(actual_out.shape[0], expected_out.shape[0]);
+  auto actual_host = actual_out.storage->to_host();
+  auto expected_host = expected_out.storage->to_host();
+  ASSERT_EQ(actual_host.size(), expected_host.size());
+  for (size_t i = 0; i < actual_host.size(); ++i) {
+    EXPECT_EQ(actual_host[i],
+              static_cast<int>(__bfloat162float(expected_host[i])))
+        << "at index " << i;
+  }
+}
