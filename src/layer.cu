@@ -107,8 +107,6 @@ GroupedQueryAttention::GroupedQueryAttention(
           _max_sequence_length * _q_layer.out_features())),
       _k_proj_rope_out_storage(std::make_shared<Storage<__nv_bfloat16>>(
           _max_sequence_length * _k_layer.out_features())),
-      _scores_out_storage(std::make_shared<Storage<float>>(
-          _kv_heads * _groups * _max_sequence_length * _max_sequence_length)),
       _attention_out_storage(std::make_shared<Storage<__nv_bfloat16>>(
           _kv_heads * _groups * _max_sequence_length *
           (_k_layer.out_features() / _kv_heads))) {
@@ -186,16 +184,18 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
          "QKV element count should match");
   const auto scores_elems =
       _kv_heads * _groups * sequence_length_q * sequence_length_kv;
+  auto scores_out_storage = std::make_shared<Storage<float>>(
+      _kv_heads * _groups * _max_sequence_length * _max_sequence_length);
   {
     const dim3 num_blocks(ceil_div(scores_elems, threads_per_block.x));
     if (causal_mask)
       grouped_query_attention_scores_masked<<<num_blocks, threads_per_block>>>(
-          _scores_out_storage->data, q_proj_rope.storage->data,
+          scores_out_storage->data, q_proj_rope.storage->data,
           k_proj_rope.storage->data, sequence_length_q, sequence_length_kv,
           dimension, _kv_heads, _groups);
     else
       grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
-          _scores_out_storage->data, q_proj_rope.storage->data,
+          scores_out_storage->data, q_proj_rope.storage->data,
           k_proj_rope.storage->data, sequence_length_q, sequence_length_kv,
           dimension, _kv_heads, _groups);
   }
@@ -203,7 +203,7 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const dim3 num_blocks(
         ceil_div(scores_elems / sequence_length_kv, threads_per_block.x));
     softmax<<<num_blocks, threads_per_block>>>(
-        _scores_out_storage->data, _scores_out_storage->data,
+        scores_out_storage->data, scores_out_storage->data,
         scores_elems / sequence_length_kv, sequence_length_kv);
   }
   const auto attention_elems =
@@ -211,7 +211,7 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   {
     const dim3 num_blocks(ceil_div(attention_elems, 1024));
     grouped_query_attention_output<<<num_blocks, threads_per_block>>>(
-        _attention_out_storage->data, _scores_out_storage->data,
+        _attention_out_storage->data, scores_out_storage->data,
         v_proj.storage->data, sequence_length_q, sequence_length_kv, dimension,
         _kv_heads, _groups);
   }
