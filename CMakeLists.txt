@@ -35,7 +35,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(tokenizers-cpp)
 
 # Kernel library
-set(KERNEL_SRCS src/tensor.cc src/kernel.cu src/layer.cc src/layer.cu)
+set(KERNEL_SRCS src/tensor.cc src/kernel.cu src/layer.cc src/layer.cu
+                src/model.cc)
 add_library(qwen2kern STATIC ${KERNEL_SRCS})
 target_include_directories(qwen2kern PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(qwen2kern PUBLIC CUDA::cudart)
