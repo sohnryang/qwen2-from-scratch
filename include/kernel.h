@@ -87,3 +87,14 @@ lookup_embeddings(__nv_bfloat16 *__restrict__ out,
                   const int *__restrict__ input_ids,
                   const __nv_bfloat16 *__restrict__ embedding_table,
                   std::size_t sequence_length, std::size_t dimension);
+
+__global__ void argmax_first(const __nv_bfloat16 *__restrict__ logits,
+                             float *__restrict__ block_max_vals,
+                             int *__restrict__ block_max_indices,
+                             std::size_t vocab_size);
+
+__global__ void argmax_reduce(const float *__restrict__ in_vals,
+                              const int *__restrict__ in_indices,
+                              float *__restrict__ out_vals,
+                              int *__restrict__ out_indices,
+                              std::size_t blocks_in);

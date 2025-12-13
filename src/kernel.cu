@@ -360,3 +360,89 @@ lookup_embeddings(__nv_bfloat16 *__restrict__ out,
   for (int i = 0; i < dimension; i++)
     out[idx * dimension + i] = embedding_table[token_id * dimension + i];
 }
+
+__global__ void argmax_first(const __nv_bfloat16 *__restrict__ logits,
+                             float *__restrict__ block_max_vals,
+                             int *__restrict__ block_max_indices,
+                             std::size_t vocab_size) {
+  const auto batch = blockIdx.y;
+  const auto block = blockIdx.x;
+
+  const auto global_offset = batch * vocab_size;
+  const auto idx = block * blockDim.x + threadIdx.x;
+  const float val = idx < vocab_size
+                        ? __bfloat162float(logits[global_offset + idx])
+                        : -INFINITY;
+
+  extern __shared__ unsigned char shared_raw[];
+  float *shared_max_val = reinterpret_cast<float *>(shared_raw);
+  int *shared_max_idx =
+      reinterpret_cast<int *>(shared_raw + blockDim.x * sizeof(float));
+  shared_max_val[threadIdx.x] = val;
+  shared_max_idx[threadIdx.x] = idx;
+  __syncthreads();
+
+  for (std::size_t offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+    if (threadIdx.x < offset) {
+      const float other_val = shared_max_val[threadIdx.x + offset];
+      const int other_idx = shared_max_idx[threadIdx.x + offset];
+      if (other_val > shared_max_val[threadIdx.x] ||
+          (other_val == shared_max_val[threadIdx.x] &&
+           other_idx < shared_max_idx[threadIdx.x])) {
+        shared_max_val[threadIdx.x] = other_val;
+        shared_max_idx[threadIdx.x] = other_idx;
+      }
+    }
+    __syncthreads();
+  }
+
+  if (threadIdx.x == 0) {
+    const auto out_idx = batch * gridDim.x + block;
+    block_max_vals[out_idx] = shared_max_val[0];
+    block_max_indices[out_idx] = shared_max_idx[0];
+  }
+}
+
+__global__ void argmax_reduce(const float *__restrict__ in_vals,
+                              const int *__restrict__ in_indices,
+                              float *__restrict__ out_vals,
+                              int *__restrict__ out_indices,
+                              std::size_t blocks_in) {
+  const auto batch = blockIdx.y;
+  const auto block = blockIdx.x;
+
+  const auto base = batch * blocks_in;
+  const auto idx = block * blockDim.x + threadIdx.x;
+
+  const bool valid = idx < blocks_in;
+  const float val = valid ? in_vals[base + idx] : -INFINITY;
+  const int id = valid ? in_indices[base + idx] : 0;
+
+  extern __shared__ unsigned char shared_raw[];
+  float *shared_max_val = reinterpret_cast<float *>(shared_raw);
+  int *shared_max_idx =
+      reinterpret_cast<int *>(shared_raw + blockDim.x * sizeof(float));
+  shared_max_val[threadIdx.x] = val;
+  shared_max_idx[threadIdx.x] = id;
+  __syncthreads();
+
+  for (std::size_t offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+    if (threadIdx.x < offset) {
+      const float other_val = shared_max_val[threadIdx.x + offset];
+      const int other_idx = shared_max_idx[threadIdx.x + offset];
+      if (other_val > shared_max_val[threadIdx.x] ||
+          (other_val == shared_max_val[threadIdx.x] &&
+           other_idx < shared_max_idx[threadIdx.x])) {
+        shared_max_val[threadIdx.x] = other_val;
+        shared_max_idx[threadIdx.x] = other_idx;
+      }
+    }
+    __syncthreads();
+  }
+
+  if (threadIdx.x == 0) {
+    const auto out_idx = batch * gridDim.x + block;
+    out_vals[out_idx] = shared_max_val[0];
+    out_indices[out_idx] = shared_max_idx[0];
+  }
+}

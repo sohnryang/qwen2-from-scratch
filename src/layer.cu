@@ -283,3 +283,42 @@ Tensor<__nv_bfloat16> Embedding::operator()(const Tensor<int> &input) {
           .dimensions = input.dimensions + 1,
           .storage = _out_storage};
 }
+
+Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits) {
+  assert(logits.dimensions == 2 && "logits should be (batch, vocab)");
+  assert(logits.shape[1] == _vocab_size &&
+         "vocab dimension should match sampler");
+
+  const auto batches = logits.shape[0];
+  const std::size_t threads_per_block = 1024;
+  std::size_t blocks = ceil_div(_vocab_size, threads_per_block);
+
+  auto current_vals = std::make_shared<Storage<float>>(
+      blocks * static_cast<std::size_t>(batches));
+  auto current_indices = std::make_shared<Storage<int>>(
+      blocks * static_cast<std::size_t>(batches));
+  const auto shared_bytes = threads_per_block * (sizeof(float) + sizeof(int));
+  argmax_first<<<dim3(blocks, batches), threads_per_block, shared_bytes>>>(
+      logits.storage->data, current_vals->data, current_indices->data,
+      _vocab_size);
+
+  while (blocks > 1) {
+    const auto next_blocks = ceil_div(blocks, threads_per_block);
+    auto next_vals = std::make_shared<Storage<float>>(
+        next_blocks * static_cast<std::size_t>(batches));
+    auto next_indices = std::make_shared<Storage<int>>(
+        next_blocks * static_cast<std::size_t>(batches));
+    argmax_reduce<<<dim3(next_blocks, batches), threads_per_block,
+                    shared_bytes>>>(current_vals->data, current_indices->data,
+                                    next_vals->data, next_indices->data,
+                                    blocks);
+    blocks = next_blocks;
+    current_vals = std::move(next_vals);
+    current_indices = std::move(next_indices);
+  }
+
+  _out_storage = current_indices;
+  return {.shape = {static_cast<std::size_t>(batches)},
+          .dimensions = 1,
+          .storage = _out_storage};
+}

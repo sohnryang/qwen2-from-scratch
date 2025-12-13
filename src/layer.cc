@@ -109,3 +109,7 @@ Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
   embedding._embedding_table = embedding_table;
   return embedding;
 }
+
+Sampler::Sampler(std::size_t vocab_size)
+    : _vocab_size{vocab_size}, _out_storage(std::make_shared<Storage<int>>(1)) {
+}

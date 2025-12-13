@@ -140,3 +140,16 @@ public:
 
   Tensor<__nv_bfloat16> operator()(const Tensor<int> &input);
 };
+
+class Sampler {
+private:
+  std::size_t _vocab_size;
+  std::shared_ptr<Storage<int>> _out_storage;
+
+public:
+  explicit Sampler(std::size_t vocab_size);
+
+  std::size_t vocab_size() const { return _vocab_size; }
+
+  Tensor<int> operator()(const Tensor<__nv_bfloat16> &logits);
+};
