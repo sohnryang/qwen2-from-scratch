@@ -188,6 +188,24 @@ def create_sampler_test_file(data_dir: str):
     )
 
 
+def create_lm_head_test_file(data_dir: str):
+    hidden = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=torch.bfloat16)
+    weight = torch.tensor(
+        [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9],
+            [1.0, 1.1, 1.2],
+        ],
+        dtype=torch.bfloat16,
+    )
+    expected = hidden[-1] @ weight.T
+    save_file(
+        {"hidden": hidden, "weight": weight, "expected": expected},
+        os.path.join(data_dir, "lm_head_test.safetensors"),
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("create_test_data")
     parser.add_argument("data_dir", help="Test data directory", type=str)
@@ -202,3 +220,4 @@ if __name__ == "__main__":
     create_transformer_block_test_file(parsed.data_dir)
     create_embedding_test_file(parsed.data_dir)
     create_sampler_test_file(parsed.data_dir)
+    create_lm_head_test_file(parsed.data_dir)

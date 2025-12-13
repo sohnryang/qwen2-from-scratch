@@ -189,3 +189,17 @@ TEST(LayerTest, Sampler) {
         << "at index " << i;
   }
 }
+
+TEST(LayerTest, LmHeadDense) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "lm_head_test.safetensors").string());
+  const auto &hidden = tensors.at("hidden");
+  const auto &weight = tensors.at("weight");
+  const auto &expected_out = tensors.at("expected");
+
+  LmHeadDense lm_head = LmHeadDense::from_parameters(weight);
+
+  Tensor<__nv_bfloat16> actual_out = lm_head(hidden);
+
+  assert_tensors_equal(actual_out, expected_out);
+}
