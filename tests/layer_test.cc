@@ -4,9 +4,12 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <filesystem>
 #include <vector>
 
 #include <cuda_bf16.h>
+
+namespace fs = std::filesystem;
 
 static void assert_tensors_equal(const Tensor<__nv_bfloat16> &actual,
                                  const Tensor<__nv_bfloat16> &expected) {
@@ -42,8 +45,8 @@ static void assert_tensors_near(const Tensor<__nv_bfloat16> &actual,
 }
 
 TEST(LayerTest, DenseNoActivation) {
-  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
-                                       "/matmul_test.safetensors");
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "matmul_test.safetensors").string());
   const auto &input = tensors.at("in_a");
   const auto &weight = tensors.at("in_b_transposed");
   const auto &bias = tensors.at("bias");
@@ -59,8 +62,8 @@ TEST(LayerTest, DenseNoActivation) {
 }
 
 TEST(LayerTest, DenseWithActivation) {
-  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
-                                       "/dense_test.safetensors");
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "dense_test.safetensors").string());
   const auto &input = tensors.at("x");
   const auto &weight = tensors.at("weight");
   const auto &bias = tensors.at("bias");
@@ -76,8 +79,8 @@ TEST(LayerTest, DenseWithActivation) {
 }
 
 TEST(LayerTest, RMSNorm) {
-  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
-                                       "/rmsnorm_test.safetensors");
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "rmsnorm_test.safetensors").string());
   const auto &input = tensors.at("x");
   const auto &weight = tensors.at("weight");
   const auto &expected_out = tensors.at("out");
@@ -93,8 +96,9 @@ TEST(LayerTest, RMSNorm) {
 }
 
 TEST(LayerTest, Qwen2TransformerBlock) {
-  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
-                                       "/transformer_block_test.safetensors");
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "transformer_block_test.safetensors")
+          .string());
   const auto &input = tensors.at("in");
   const auto &expected_out = tensors.at("out");
 
@@ -139,8 +143,8 @@ TEST(LayerTest, Qwen2TransformerBlock) {
 }
 
 TEST(LayerTest, Embedding) {
-  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
-                                       "/embedding_test.safetensors");
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "embedding_test.safetensors").string());
   const auto &embedding_table = tensors.at("embedding_table");
   const auto &expected_out = tensors.at("out");
   const auto &input_bf16 = tensors.at("input");
