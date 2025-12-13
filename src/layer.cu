@@ -322,3 +322,25 @@ Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits) {
           .dimensions = 1,
           .storage = _out_storage};
 }
+
+Tensor<__nv_bfloat16>
+LmHeadDense::operator()(const Tensor<__nv_bfloat16> &input) {
+  assert(input.dimensions >= 1 && "input should have at least 1 dimension");
+  const auto last_dim = input.shape[input.dimensions - 1];
+  assert(last_dim == _in_features && "invalid input dimension");
+
+  const std::size_t tokens = input.elems() / last_dim;
+  assert(tokens > 0 && "input should have at least one token");
+  const std::size_t offset = (tokens - 1) * last_dim;
+  const __nv_bfloat16 *last_token = input.storage->data + offset;
+
+  const dim3 threads_per_block(16, 16);
+  const dim3 num_blocks(1, ceil_div(_out_features, threads_per_block.y));
+  gemm_transposed<<<num_blocks, threads_per_block>>>(
+      _out_storage->data, last_token, _weight.storage->data, nullptr, 1.0f, 1,
+      _out_features, _in_features);
+
+  Tensor<__nv_bfloat16> res = {.dimensions = 1, .storage = _out_storage};
+  res.shape[0] = _out_features;
+  return res;
+}

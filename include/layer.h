@@ -153,3 +153,21 @@ public:
 
   Tensor<int> operator()(const Tensor<__nv_bfloat16> &logits);
 };
+
+class LmHeadDense {
+private:
+  std::size_t _in_features;
+  std::size_t _out_features;
+  Tensor<__nv_bfloat16> _weight;
+  std::shared_ptr<Storage<__nv_bfloat16>> _out_storage;
+
+public:
+  LmHeadDense(std::size_t in_features, std::size_t out_features);
+
+  std::size_t in_features() const { return _in_features; }
+  std::size_t out_features() const { return _out_features; }
+
+  static LmHeadDense from_parameters(const Tensor<__nv_bfloat16> &weight);
+
+  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
+};

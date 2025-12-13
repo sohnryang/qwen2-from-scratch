@@ -113,3 +113,19 @@ Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
 Sampler::Sampler(std::size_t vocab_size)
     : _vocab_size{vocab_size}, _out_storage(std::make_shared<Storage<int>>(1)) {
 }
+
+LmHeadDense::LmHeadDense(std::size_t in_features, std::size_t out_features)
+    : _in_features{in_features}, _out_features{out_features},
+      _weight{.shape = {_out_features, _in_features},
+              .dimensions = 2,
+              .storage = std::make_shared<Storage<__nv_bfloat16>>(
+                  _out_features * _in_features)},
+      _out_storage(std::make_shared<Storage<__nv_bfloat16>>(_out_features)) {}
+
+LmHeadDense LmHeadDense::from_parameters(const Tensor<__nv_bfloat16> &weight) {
+  assert(weight.dimensions == 2 && "invalid weight dimension");
+  const auto in_features = weight.shape[1], out_features = weight.shape[0];
+  LmHeadDense dense(in_features, out_features);
+  dense._weight = weight;
+  return dense;
+}
