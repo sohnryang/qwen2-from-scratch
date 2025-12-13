@@ -21,8 +21,9 @@ static void print_usage() {
             << "  -w <file>   Path to the weights file.\n"
             << "  -t <file>   Path to the tokenizer file.\n"
             << "  -i <file>   Path to the inputs file.\n"
-            << "  -p <text>   System prompt text (default: \"You're a helpful assistant.\").\n"
-            << "  -l <int>    Maximum sequence length (default: 128).\n"
+            << "  -p <text>   System prompt text (default: \"You're a helpful "
+               "assistant.\").\n"
+            << "  -l <int>    Maximum sequence length (default: 4096).\n"
             << "  -h          Print this help message.\n";
 }
 #endif
@@ -43,7 +44,7 @@ load_tokenizer(const std::string &filename) {
 int main(int argc, char **argv) {
   std::string weights_filename, tokenizer_filename, input_filename,
       system_prompt = "You're a helpful assistant.";
-  std::size_t max_sequence_length = 128;
+  std::size_t max_sequence_length = 4096;
 #if __has_include(<unistd.h>)
   int next_option;
   do {
