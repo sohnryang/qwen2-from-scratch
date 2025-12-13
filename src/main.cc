@@ -19,7 +19,10 @@ static void print_usage() {
   std::cout << "Usage: app [options]\n"
             << "Options:\n"
             << "  -w <file>   Path to the weights file.\n"
+            << "  -t <file>   Path to the tokenizer file.\n"
             << "  -i <file>   Path to the inputs file.\n"
+            << "  -p <text>   System prompt text (default: \"You're a helpful assistant.\").\n"
+            << "  -l <int>    Maximum sequence length (default: 128).\n"
             << "  -h          Print this help message.\n";
 }
 #endif
