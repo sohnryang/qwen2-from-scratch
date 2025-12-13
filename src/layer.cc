@@ -8,49 +8,57 @@
 #include <cuda_bf16.h>
 
 Dense::Dense(std::size_t in_features, std::size_t out_features,
-             bool use_activation)
+             bool use_activation, std::size_t max_sequence_length)
     : _in_features{in_features}, _out_features{out_features},
+      _max_sequence_length{max_sequence_length},
       _use_activation{use_activation},
       _weight{.shape = {_out_features, _in_features},
               .dimensions = 2,
               .storage = std::make_shared<Storage<__nv_bfloat16>>(
                   _in_features * _out_features)},
-      _bias{} {}
+      _bias{}, _out_storage(std::make_shared<Storage<__nv_bfloat16>>(
+                   _max_sequence_length * _out_features)) {}
 
 Dense Dense::from_parameters(const Tensor<__nv_bfloat16> &weight,
-                             bool use_activation) {
+                             bool use_activation,
+                             std::size_t max_sequence_length) {
   assert(weight.dimensions == 2 && "invalid weight dimension");
   const auto in_features = weight.shape[1], out_features = weight.shape[0];
-  Dense dense(in_features, out_features, use_activation);
+  Dense dense(in_features, out_features, use_activation, max_sequence_length);
   dense._weight = weight;
   return dense;
 }
 
 Dense Dense::from_parameters(const Tensor<__nv_bfloat16> &weight,
                              const Tensor<__nv_bfloat16> &bias,
-                             bool use_activation) {
+                             bool use_activation,
+                             std::size_t max_sequence_length) {
   assert(weight.dimensions == 2 && "invalid weight dimension");
   assert(bias.dimensions == 1 && "invalid bias dimension");
   assert(weight.shape[0] == bias.shape[0] && "weight and bias shape mismatch");
   const auto in_features = weight.shape[1], out_features = weight.shape[0];
 
-  Dense dense(in_features, out_features, use_activation);
+  Dense dense(in_features, out_features, use_activation, max_sequence_length);
   dense._weight = weight;
   dense._bias = bias;
   return dense;
 }
 
-RMSNorm::RMSNorm(std::size_t dimensions, float epsilon)
+RMSNorm::RMSNorm(std::size_t dimensions, float epsilon,
+                 std::size_t max_sequence_length)
     : _dimensions{dimensions}, _epsilon{epsilon},
+      _max_sequence_length{max_sequence_length},
       _weight{.shape = {_dimensions},
               .dimensions = 1,
-              .storage =
-                  std::make_shared<Storage<__nv_bfloat16>>(_dimensions)} {}
+              .storage = std::make_shared<Storage<__nv_bfloat16>>(_dimensions)},
+      _out_storage(std::make_shared<Storage<__nv_bfloat16>>(
+          _max_sequence_length * _dimensions)) {}
 
 RMSNorm RMSNorm::from_parameter(const Tensor<__nv_bfloat16> &weight,
-                                float epsilon) {
+                                float epsilon,
+                                std::size_t max_sequence_length) {
   assert(weight.dimensions == 1 && "invalid weight dimension");
-  RMSNorm rmsnorm(weight.shape[0], epsilon);
+  RMSNorm rmsnorm(weight.shape[0], epsilon, max_sequence_length);
   rmsnorm._weight = weight;
   return rmsnorm;
 }
@@ -80,18 +88,24 @@ Qwen2TransformerBlock::Qwen2TransformerBlock(
          "attention layer and MLP layer dimensions should match");
 }
 
-Embedding::Embedding(std::size_t table_size, std::size_t dimension)
+Embedding::Embedding(std::size_t table_size, std::size_t dimension,
+                     std::size_t max_sequence_length)
     : _table_size{table_size}, _dimension{dimension},
+      _max_sequence_length{max_sequence_length},
       _embedding_table{.shape = {table_size, _dimension},
                        .dimensions = 2,
                        .storage = std::make_shared<Storage<__nv_bfloat16>>(
-                           _table_size * _dimension)} {}
+                           _table_size * _dimension)},
+      _out_storage(std::make_shared<Storage<__nv_bfloat16>>(
+          _max_sequence_length * _dimension)) {}
 
 Embedding
-Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table) {
+Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
+                          std::size_t max_sequence_length) {
   assert(embedding_table.dimensions == 2 &&
          "invalid embedding table dimension");
-  Embedding embedding(embedding_table.shape[0], embedding_table.shape[1]);
+  Embedding embedding(embedding_table.shape[0], embedding_table.shape[1],
+                      max_sequence_length);
   embedding._embedding_table = embedding_table;
   return embedding;
 }

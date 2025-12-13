@@ -48,8 +48,10 @@ TEST(LayerTest, DenseNoActivation) {
   const auto &weight = tensors.at("in_b_transposed");
   const auto &bias = tensors.at("bias");
   const auto &expected_out = tensors.at("out");
+  const auto max_sequence_length = input.elems() / weight.shape[1];
 
-  Dense dense_layer = Dense::from_parameters(weight, bias, false);
+  Dense dense_layer =
+      Dense::from_parameters(weight, bias, false, max_sequence_length);
 
   Tensor<__nv_bfloat16> actual_out = dense_layer(input);
 
@@ -63,8 +65,10 @@ TEST(LayerTest, DenseWithActivation) {
   const auto &weight = tensors.at("weight");
   const auto &bias = tensors.at("bias");
   const auto &expected_out = tensors.at("out");
+  const auto max_sequence_length = input.elems() / weight.shape[1];
 
-  Dense dense_layer = Dense::from_parameters(weight, bias, true);
+  Dense dense_layer =
+      Dense::from_parameters(weight, bias, true, max_sequence_length);
 
   Tensor<__nv_bfloat16> actual_out = dense_layer(input);
 
@@ -78,8 +82,10 @@ TEST(LayerTest, RMSNorm) {
   const auto &weight = tensors.at("weight");
   const auto &expected_out = tensors.at("out");
   const float epsilon = 1e-5;
+  const auto max_sequence_length = input.elems() / weight.shape[0];
 
-  RMSNorm norm_layer = RMSNorm::from_parameter(weight, epsilon);
+  RMSNorm norm_layer =
+      RMSNorm::from_parameter(weight, epsilon, max_sequence_length);
 
   Tensor<__nv_bfloat16> actual_out = norm_layer(input);
 
@@ -93,32 +99,36 @@ TEST(LayerTest, Qwen2TransformerBlock) {
   const auto &expected_out = tensors.at("out");
 
   const float rms_norm_eps = 1e-6;
-  RMSNorm input_norm_layer =
-      RMSNorm::from_parameter(tensors.at("input_norm_weight"), rms_norm_eps);
-  RMSNorm post_attention_norm_layer =
-      RMSNorm::from_parameter(tensors.at("post_norm_weight"), rms_norm_eps);
+  const auto input_sequence_length = input.elems() / input.shape[1];
+  RMSNorm input_norm_layer = RMSNorm::from_parameter(
+      tensors.at("input_norm_weight"), rms_norm_eps, input_sequence_length);
+  RMSNorm post_attention_norm_layer = RMSNorm::from_parameter(
+      tensors.at("post_norm_weight"), rms_norm_eps, input_sequence_length);
 
   const std::size_t num_kv_heads = 2;
   const std::size_t groups = 6; // 12 heads / 2 kv_heads
-  const std::size_t max_sequence_length = 32768;
   const int encoding_base = 1000000;
 
-  Dense q_layer = Dense::from_parameters(tensors.at("q_weight"),
-                                         tensors.at("q_bias"), false);
-  Dense k_layer = Dense::from_parameters(tensors.at("k_weight"),
-                                         tensors.at("k_bias"), false);
-  Dense v_layer = Dense::from_parameters(tensors.at("v_weight"),
-                                         tensors.at("v_bias"), false);
-  Dense o_layer = Dense::from_parameters(tensors.at("o_weight"), false);
+  Dense q_layer =
+      Dense::from_parameters(tensors.at("q_weight"), tensors.at("q_bias"),
+                             false, input_sequence_length);
+  Dense k_layer =
+      Dense::from_parameters(tensors.at("k_weight"), tensors.at("k_bias"),
+                             false, input_sequence_length);
+  Dense v_layer =
+      Dense::from_parameters(tensors.at("v_weight"), tensors.at("v_bias"),
+                             false, input_sequence_length);
+  Dense o_layer = Dense::from_parameters(tensors.at("o_weight"), false,
+                                         input_sequence_length);
   GroupedQueryAttention attention_layer(num_kv_heads, groups,
-                                        max_sequence_length, encoding_base,
+                                        input_sequence_length, encoding_base,
                                         q_layer, k_layer, v_layer, o_layer);
-  Dense gate_proj_layer =
-      Dense::from_parameters(tensors.at("gate_proj_weight"), true);
-  Dense up_proj_layer =
-      Dense::from_parameters(tensors.at("up_proj_weight"), false);
-  Dense down_proj_layer =
-      Dense::from_parameters(tensors.at("down_proj_weight"), false);
+  Dense gate_proj_layer = Dense::from_parameters(tensors.at("gate_proj_weight"),
+                                                 true, input_sequence_length);
+  Dense up_proj_layer = Dense::from_parameters(tensors.at("up_proj_weight"),
+                                               false, input_sequence_length);
+  Dense down_proj_layer = Dense::from_parameters(tensors.at("down_proj_weight"),
+                                                 false, input_sequence_length);
   Qwen2TransformerBlock transformer_block(
       input_norm_layer, attention_layer, post_attention_norm_layer,
       gate_proj_layer, up_proj_layer, down_proj_layer);
@@ -144,8 +154,10 @@ TEST(LayerTest, Embedding) {
       Tensor{.shape = input_bf16.shape,
              .dimensions = input_bf16.dimensions,
              .storage = std::make_shared<Storage<int>>(input_int_host)};
+  const auto max_sequence_length = input.elems();
 
-  Embedding embedding_layer = Embedding::from_parameter(embedding_table);
+  Embedding embedding_layer =
+      Embedding::from_parameter(embedding_table, max_sequence_length);
 
   Tensor<__nv_bfloat16> actual_out = embedding_layer(input);
 
