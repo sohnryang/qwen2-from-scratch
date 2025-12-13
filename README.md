@@ -44,4 +44,5 @@ Options:
 - `-t <file>`: tokenizer
 - `-p <text>`: system prompt (default: "You're a helpful assistant.")
 - `-l <int>`: max sequence length (default: 128)
+- `-m`: print timing stats (elapsed seconds, tokens/s) per response
 - `-h`: help
