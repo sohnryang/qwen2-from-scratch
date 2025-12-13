@@ -72,6 +72,7 @@ public:
                         const Dense &q_layer, const Dense &k_layer,
                         const Dense &v_layer, const Dense &o_layer);
 
+  std::size_t max_sequence_length() const { return _max_sequence_length; }
   const Dense &q_layer() const { return _q_layer; }
   const Dense &k_layer() const { return _k_layer; }
   const Dense &v_layer() const { return _v_layer; }
@@ -108,6 +109,11 @@ public:
                         const Dense &up_proj_layer,
                         const Dense &down_proj_layer);
 
+  const RMSNorm &input_norm_layer() const { return _input_norm_layer; }
+  const GroupedQueryAttention &attention_layer() const {
+    return _attention_layer;
+  }
+
   Tensor<__nv_bfloat16> operator()(
       const Tensor<__nv_bfloat16> &input, bool causal_mask = true,
       std::shared_ptr<Storage<__nv_bfloat16>> input_norm_out_storage = nullptr,
@@ -134,6 +140,9 @@ private:
 
 public:
   Embedding(std::size_t table_size, std::size_t dimension);
+
+  std::size_t table_size() const { return _table_size; }
+  std::size_t dimension() const { return _dimension; }
 
   static Embedding from_parameter(const Tensor<__nv_bfloat16> &embedding_table);
 
