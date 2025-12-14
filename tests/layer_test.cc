@@ -78,6 +78,25 @@ TEST(LayerTest, DenseWithActivation) {
   assert_tensors_equal(actual_out, expected_out);
 }
 
+TEST(LayerTest, DenseCacheUsesPastActivations) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "dense_test.safetensors").string());
+  const auto &weight = tensors.at("weight");
+  const auto &bias = tensors.at("bias");
+  const auto &prefix_input = tensors.at("cache_dense_input_prefix");
+  const auto &full_input = tensors.at("cache_dense_input_full");
+  const auto &expected_full_out = tensors.at("cache_dense_out_full");
+  const auto max_sequence_length = full_input.elems() / weight.shape[1];
+
+  Dense dense_layer =
+      Dense::from_parameters(weight, bias, true, max_sequence_length);
+
+  (void)dense_layer(prefix_input);
+  Tensor<__nv_bfloat16> actual_full_out = dense_layer(full_input, true);
+
+  assert_tensors_equal(actual_full_out, expected_full_out);
+}
+
 TEST(LayerTest, RMSNorm) {
   auto tensors = load_from_safetensors(
       (fs::path(TEST_DATA_DIR) / "rmsnorm_test.safetensors").string());
@@ -93,6 +112,25 @@ TEST(LayerTest, RMSNorm) {
   Tensor<__nv_bfloat16> actual_out = norm_layer(input);
 
   assert_tensors_equal(actual_out, expected_out);
+}
+
+TEST(LayerTest, RMSNormCacheUsesPastActivations) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "rmsnorm_test.safetensors").string());
+  const auto &prefix_input = tensors.at("cache_rmsnorm_input_prefix");
+  const auto &full_input = tensors.at("cache_rmsnorm_input_full");
+  const auto &weight = tensors.at("weight");
+  const auto &expected_full_out = tensors.at("cache_rmsnorm_out_full");
+  const float epsilon = 1e-5;
+  const auto max_sequence_length = full_input.elems() / weight.shape[0];
+
+  RMSNorm norm_layer =
+      RMSNorm::from_parameter(weight, epsilon, max_sequence_length);
+
+  (void)norm_layer(prefix_input);
+  Tensor<__nv_bfloat16> actual_full_out = norm_layer(full_input, true);
+
+  assert_tensors_equal(actual_full_out, expected_full_out);
 }
 
 TEST(LayerTest, Qwen2TransformerBlock) {
@@ -164,6 +202,38 @@ TEST(LayerTest, Embedding) {
       Embedding::from_parameter(embedding_table, max_sequence_length);
 
   Tensor<__nv_bfloat16> actual_out = embedding_layer(input);
+
+  assert_tensors_equal(actual_out, expected_out);
+}
+
+TEST(LayerTest, EmbeddingCacheUsesPastActivations) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "embedding_test.safetensors").string());
+  const auto &embedding_table = tensors.at("embedding_table");
+  const auto &cache_input_prefix_bf16 =
+      tensors.at("cache_embedding_input_prefix");
+  const auto &cache_input_full_bf16 = tensors.at("cache_embedding_input_full");
+  const auto &expected_out = tensors.at("cache_embedding_out_full");
+
+  auto to_int_tensor = [](const Tensor<__nv_bfloat16> &bf16_tensor) {
+    auto host = bf16_tensor.storage->to_host();
+    std::vector<int> host_int(host.size());
+    for (size_t i = 0; i < host.size(); ++i)
+      host_int[i] = static_cast<int>(__bfloat162float(host[i]));
+    return Tensor<int>{.shape = bf16_tensor.shape,
+                       .dimensions = bf16_tensor.dimensions,
+                       .storage = std::make_shared<Storage<int>>(host_int)};
+  };
+
+  const auto cache_input_prefix = to_int_tensor(cache_input_prefix_bf16);
+  const auto cache_input_full = to_int_tensor(cache_input_full_bf16);
+  const auto max_sequence_length = cache_input_full.elems();
+
+  Embedding embedding_layer =
+      Embedding::from_parameter(embedding_table, max_sequence_length);
+
+  (void)embedding_layer(cache_input_prefix);
+  Tensor<__nv_bfloat16> actual_out = embedding_layer(cache_input_full, true);
 
   assert_tensors_equal(actual_out, expected_out);
 }

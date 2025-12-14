@@ -55,12 +55,23 @@ def create_dense_test_file(data_dir: str):
     weight = torch.tensor([[0, 1], [2, 3], [4, 5], [6, 7]], dtype=torch.bfloat16)
     bias = torch.tensor([0, 1, 2, 3], dtype=torch.bfloat16)
     x = torch.tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], dtype=torch.bfloat16)
+    cache_tokens_full = x.reshape(-1, 2).clone()
+    cache_tokens_prefix = cache_tokens_full[:-1].clone()
     with torch.no_grad():
         model[0].weight = nn.Parameter(weight)
         model[0].bias = nn.Parameter(bias)
         out = model(x)
+        cache_out_full = model(cache_tokens_full)
     save_file(
-        {"weight": weight, "bias": bias, "x": x, "out": out},
+        {
+            "weight": weight,
+            "bias": bias,
+            "x": x,
+            "out": out,
+            "cache_dense_input_prefix": cache_tokens_prefix,
+            "cache_dense_input_full": cache_tokens_full,
+            "cache_dense_out_full": cache_out_full,
+        },
         os.path.join(data_dir, "dense_test.safetensors"),
     )
 
@@ -77,6 +88,8 @@ def create_rmsnorm_test_file(data_dir: str):
     dims = 128
     eps = 1e-5
     x = torch.linspace(-5, 5, 2 * dims, dtype=torch.bfloat16).reshape(2, dims)
+    cache_x_full = x.clone()
+    cache_x_prefix = x[:1].clone()
 
     rmsnorm_layer = nn.RMSNorm(dims, eps=eps)
     rmsnorm_layer.to(torch.bfloat16)
@@ -85,9 +98,17 @@ def create_rmsnorm_test_file(data_dir: str):
     rmsnorm_layer.weight.data = custom_weight
 
     out = rmsnorm_layer(x)
+    cache_out_full = rmsnorm_layer(cache_x_full)
 
     save_file(
-        {"x": x, "weight": custom_weight, "out": out},
+        {
+            "x": x,
+            "weight": custom_weight,
+            "out": out,
+            "cache_rmsnorm_input_prefix": cache_x_prefix,
+            "cache_rmsnorm_input_full": cache_x_full,
+            "cache_rmsnorm_out_full": cache_out_full,
+        },
         os.path.join(data_dir, "rmsnorm_test.safetensors"),
     )
 
@@ -161,13 +182,19 @@ def create_embedding_test_file(data_dir: str):
     ).reshape(table_size, dimension)
     embedding_layer.weight.data = embedding_table
     input_indices = torch.tensor([[0, 2, 4, 6], [1, 3, 5, 7]], dtype=torch.int)
+    cache_input_full = input_indices.reshape(-1)[:4].contiguous()
+    cache_input_prefix = cache_input_full[:-1]
     with torch.no_grad():
         out = embedding_layer(input_indices)
+        cache_out_full = embedding_layer(cache_input_full)
     save_file(
         {
             "embedding_table": embedding_table,
             "input": input_indices.to(torch.bfloat16),
             "out": out,
+            "cache_embedding_input_prefix": cache_input_prefix.to(torch.bfloat16),
+            "cache_embedding_input_full": cache_input_full.to(torch.bfloat16),
+            "cache_embedding_out_full": cache_out_full,
         },
         os.path.join(data_dir, "embedding_test.safetensors"),
     )
