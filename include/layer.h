@@ -16,7 +16,6 @@ private:
   bool _use_activation;
   Tensor<__nv_bfloat16> _weight;
   std::optional<Tensor<__nv_bfloat16>> _bias;
-  std::shared_ptr<Storage<__nv_bfloat16>> _out_storage;
 
 public:
   Dense(std::size_t in_features, std::size_t out_features, bool use_activation,
@@ -44,7 +43,6 @@ private:
   float _epsilon;
   std::size_t _max_sequence_length;
   Tensor<__nv_bfloat16> _weight;
-  std::shared_ptr<Storage<__nv_bfloat16>> _out_storage;
 
 public:
   RMSNorm(std::size_t dimensions, float epsilon,
@@ -124,7 +122,6 @@ private:
   std::size_t _dimension;
   std::size_t _max_sequence_length;
   Tensor<__nv_bfloat16> _embedding_table;
-  std::shared_ptr<Storage<__nv_bfloat16>> _out_storage;
 
 public:
   Embedding(std::size_t table_size, std::size_t dimension,
@@ -143,7 +140,6 @@ public:
 class Sampler {
 private:
   std::size_t _vocab_size;
-  std::shared_ptr<Storage<int>> _out_storage;
   std::shared_ptr<Storage<float>> _vals_storage;
   std::shared_ptr<Storage<float>> _vals_storage_next;
   std::shared_ptr<Storage<int>> _indices_storage;
@@ -162,7 +158,6 @@ private:
   std::size_t _in_features;
   std::size_t _out_features;
   Tensor<__nv_bfloat16> _weight;
-  std::shared_ptr<Storage<__nv_bfloat16>> _out_storage;
 
 public:
   LmHeadDense(std::size_t in_features, std::size_t out_features);

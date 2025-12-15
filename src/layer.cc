@@ -16,8 +16,7 @@ Dense::Dense(std::size_t in_features, std::size_t out_features,
               .dimensions = 2,
               .storage = std::make_shared<Storage<__nv_bfloat16>>(
                   _in_features * _out_features)},
-      _bias{}, _out_storage(std::make_shared<Storage<__nv_bfloat16>>(
-                   _max_sequence_length * _out_features)) {}
+      _bias{} {}
 
 Dense Dense::from_parameters(const Tensor<__nv_bfloat16> &weight,
                              bool use_activation,
@@ -50,9 +49,8 @@ RMSNorm::RMSNorm(std::size_t dimensions, float epsilon,
       _max_sequence_length{max_sequence_length},
       _weight{.shape = {_dimensions},
               .dimensions = 1,
-              .storage = std::make_shared<Storage<__nv_bfloat16>>(_dimensions)},
-      _out_storage(std::make_shared<Storage<__nv_bfloat16>>(
-          _max_sequence_length * _dimensions)) {}
+              .storage =
+                  std::make_shared<Storage<__nv_bfloat16>>(_dimensions)} {}
 
 RMSNorm RMSNorm::from_parameter(const Tensor<__nv_bfloat16> &weight,
                                 float epsilon,
@@ -95,9 +93,7 @@ Embedding::Embedding(std::size_t table_size, std::size_t dimension,
       _embedding_table{.shape = {table_size, _dimension},
                        .dimensions = 2,
                        .storage = std::make_shared<Storage<__nv_bfloat16>>(
-                           _table_size * _dimension)},
-      _out_storage(std::make_shared<Storage<__nv_bfloat16>>(
-          _max_sequence_length * _dimension)) {}
+                           _table_size * _dimension)} {}
 
 Embedding
 Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
@@ -111,17 +107,15 @@ Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
 }
 
 Sampler::Sampler(std::size_t vocab_size)
-    : _vocab_size{vocab_size}, _out_storage(std::make_shared<Storage<int>>(1)),
-      _vals_storage{}, _vals_storage_next{}, _indices_storage{},
-      _indices_storage_next{} {}
+    : _vocab_size{vocab_size}, _vals_storage{}, _vals_storage_next{},
+      _indices_storage{}, _indices_storage_next{} {}
 
 LmHeadDense::LmHeadDense(std::size_t in_features, std::size_t out_features)
     : _in_features{in_features}, _out_features{out_features},
       _weight{.shape = {_out_features, _in_features},
               .dimensions = 2,
               .storage = std::make_shared<Storage<__nv_bfloat16>>(
-                  _out_features * _in_features)},
-      _out_storage(std::make_shared<Storage<__nv_bfloat16>>(_out_features)) {}
+                  _out_features * _in_features)} {}
 
 LmHeadDense LmHeadDense::from_parameters(const Tensor<__nv_bfloat16> &weight) {
   assert(weight.dimensions == 2 && "invalid weight dimension");

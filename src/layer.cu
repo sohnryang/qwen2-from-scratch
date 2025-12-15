@@ -19,19 +19,21 @@ Tensor<__nv_bfloat16> Dense::operator()(const Tensor<__nv_bfloat16> &input) {
   const dim3 threads_per_block(16, 16);
   const dim3 num_blocks(ceil_div(batches, threads_per_block.x),
                         ceil_div(_out_features, threads_per_block.y));
+  auto out_storage =
+      std::make_shared<Storage<__nv_bfloat16>>(batches * _out_features);
   if (_use_activation)
     dense<<<num_blocks, threads_per_block>>>(
-        _out_storage->data, input.storage->data, _weight.storage->data,
+        out_storage->data, input.storage->data, _weight.storage->data,
         _bias ? _bias->storage->data : nullptr, batches, _in_features,
         _out_features);
   else
     gemm_transposed<<<num_blocks, threads_per_block>>>(
-        _out_storage->data, input.storage->data, _weight.storage->data,
+        out_storage->data, input.storage->data, _weight.storage->data,
         _bias ? _bias->storage->data : nullptr, 1.0f, batches, _out_features,
         _in_features);
 
   Tensor<__nv_bfloat16> res = {.dimensions = input.dimensions,
-                               .storage = _out_storage};
+                               .storage = out_storage};
   std::copy_n(input.shape.begin(), input.dimensions - 1, res.shape.begin());
   res.shape[input.dimensions - 1] = _out_features;
   return res;
@@ -51,6 +53,8 @@ Tensor<__nv_bfloat16> RMSNorm::operator()(const Tensor<__nv_bfloat16> &input) {
   float *out_arr, *intermediate_arr;
   CHECK_CUDA(cudaMalloc(&out_arr, num_blocks.x * sizeof(float)));
   CHECK_CUDA(cudaMalloc(&intermediate_arr, num_blocks.x * sizeof(float)));
+  auto out_storage =
+      std::make_shared<Storage<__nv_bfloat16>>(batches * _dimensions);
   for (int batch = 0; batch < reshaped.shape[0]; batch++) {
     square_sum_reduce<<<num_blocks, threads_per_block,
                         threads_per_block.x * sizeof(float)>>>(
@@ -73,7 +77,7 @@ Tensor<__nv_bfloat16> RMSNorm::operator()(const Tensor<__nv_bfloat16> &input) {
         cudaMemcpy(&res, out_arr, sizeof(float), cudaMemcpyDeviceToHost));
 
     elementwise_product<<<num_blocks, threads_per_block>>>(
-        _out_storage->data + batch * _dimensions,
+        out_storage->data + batch * _dimensions,
         reshaped.storage->data + batch * _dimensions, _weight.storage->data,
         rsqrtf(res / _dimensions + _epsilon), _dimensions);
   }
@@ -82,7 +86,7 @@ Tensor<__nv_bfloat16> RMSNorm::operator()(const Tensor<__nv_bfloat16> &input) {
 
   return {.shape = input.shape,
           .dimensions = input.dimensions,
-          .storage = _out_storage};
+          .storage = out_storage};
 }
 
 GroupedQueryAttention::GroupedQueryAttention(
@@ -273,15 +277,17 @@ Tensor<__nv_bfloat16> Embedding::operator()(const Tensor<int> &input) {
   const auto sequence_length = input.elems();
   const dim3 threads_per_block(1024);
   const dim3 num_blocks(ceil_div(input.elems(), threads_per_block.x));
+  auto out_storage =
+      std::make_shared<Storage<__nv_bfloat16>>(sequence_length * _dimension);
   lookup_embeddings<<<num_blocks, threads_per_block>>>(
-      _out_storage->data, input.storage->data, _embedding_table.storage->data,
+      out_storage->data, input.storage->data, _embedding_table.storage->data,
       sequence_length, _dimension);
 
   auto shape = input.shape;
   shape[input.dimensions] = _dimension;
   return {.shape = shape,
           .dimensions = input.dimensions + 1,
-          .storage = _out_storage};
+          .storage = out_storage};
 }
 
 Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits) {
@@ -327,10 +333,9 @@ Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits) {
     current_indices = std::move(next_indices);
   }
 
-  _out_storage = current_indices;
   return {.shape = {static_cast<std::size_t>(batches)},
           .dimensions = 1,
-          .storage = _out_storage};
+          .storage = current_indices};
 }
 
 Tensor<__nv_bfloat16>
@@ -346,8 +351,9 @@ LmHeadDense::operator()(const Tensor<__nv_bfloat16> &input) {
 
   const dim3 threads_per_block(16, 16);
   const dim3 num_blocks(1, ceil_div(_out_features, threads_per_block.y));
+  auto out_storage = std::make_shared<Storage<__nv_bfloat16>>(_out_features);
   gemm_transposed<<<num_blocks, threads_per_block>>>(
-      _out_storage->data, last_token, _weight.storage->data, nullptr, 1.0f, 1,
+      out_storage->data, last_token, _weight.storage->data, nullptr, 1.0f, 1,
       _out_features, _in_features);
-  return {.shape = {_out_features}, .dimensions = 1, .storage = _out_storage};
+  return {.shape = {_out_features}, .dimensions = 1, .storage = out_storage};
 }
