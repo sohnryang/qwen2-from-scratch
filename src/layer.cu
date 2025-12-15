@@ -10,30 +10,25 @@
 
 #include <cuda_bf16.h>
 
-Tensor<__nv_bfloat16> Dense::operator()(const Tensor<__nv_bfloat16> &input,
-                                        bool use_cache) {
+Tensor<__nv_bfloat16> Dense::operator()(const Tensor<__nv_bfloat16> &input) {
   assert(input.shape[input.dimensions - 1] == _in_features &&
          "invalid input dimension");
   const auto batches = input.elems() / _in_features;
   assert(batches <= _max_sequence_length &&
          "input sequence length exceeds preallocated capacity");
-  const auto batch_offset = use_cache && batches > 0 ? batches - 1 : 0;
-  const auto effective_batches = use_cache ? 1 : batches;
-  const auto out_offset = batch_offset * _out_features;
-  const auto in_offset = batch_offset * _in_features;
   const dim3 threads_per_block(16, 16);
-  const dim3 num_blocks(ceil_div(effective_batches, threads_per_block.x),
+  const dim3 num_blocks(ceil_div(batches, threads_per_block.x),
                         ceil_div(_out_features, threads_per_block.y));
   if (_use_activation)
     dense<<<num_blocks, threads_per_block>>>(
-        _out_storage->data + out_offset, input.storage->data + in_offset,
-        _weight.storage->data, _bias ? _bias->storage->data : nullptr,
-        effective_batches, _in_features, _out_features);
+        _out_storage->data, input.storage->data, _weight.storage->data,
+        _bias ? _bias->storage->data : nullptr, batches, _in_features,
+        _out_features);
   else
     gemm_transposed<<<num_blocks, threads_per_block>>>(
-        _out_storage->data + out_offset, input.storage->data + in_offset,
-        _weight.storage->data, _bias ? _bias->storage->data : nullptr, 1.0f,
-        effective_batches, _out_features, _in_features);
+        _out_storage->data, input.storage->data, _weight.storage->data,
+        _bias ? _bias->storage->data : nullptr, 1.0f, batches, _out_features,
+        _in_features);
 
   Tensor<__nv_bfloat16> res = {.dimensions = input.dimensions,
                                .storage = _out_storage};
@@ -42,15 +37,12 @@ Tensor<__nv_bfloat16> Dense::operator()(const Tensor<__nv_bfloat16> &input,
   return res;
 }
 
-Tensor<__nv_bfloat16> RMSNorm::operator()(const Tensor<__nv_bfloat16> &input,
-                                          bool use_cache) {
+Tensor<__nv_bfloat16> RMSNorm::operator()(const Tensor<__nv_bfloat16> &input) {
   assert(input.shape[input.dimensions - 1] == _dimensions &&
          "invalid input dimension");
   const auto batches = input.elems() / _dimensions;
   assert(batches <= _max_sequence_length &&
          "input sequence length exceeds preallocated capacity");
-  const auto batch_offset = use_cache && batches > 0 ? batches - 1 : 0;
-  const auto effective_batches = use_cache ? 1 : batches;
 
   Tensor<__nv_bfloat16> reshaped =
       input.reshape({-1, static_cast<int>(_dimensions)});
@@ -59,8 +51,7 @@ Tensor<__nv_bfloat16> RMSNorm::operator()(const Tensor<__nv_bfloat16> &input,
   float *out_arr, *intermediate_arr;
   CHECK_CUDA(cudaMalloc(&out_arr, num_blocks.x * sizeof(float)));
   CHECK_CUDA(cudaMalloc(&intermediate_arr, num_blocks.x * sizeof(float)));
-  for (int batch = batch_offset; batch < batch_offset + effective_batches;
-       batch++) {
+  for (int batch = 0; batch < reshaped.shape[0]; batch++) {
     square_sum_reduce<<<num_blocks, threads_per_block,
                         threads_per_block.x * sizeof(float)>>>(
         out_arr, reshaped.storage->data + batch * _dimensions, _dimensions);
@@ -275,21 +266,16 @@ Qwen2TransformerBlock::operator()(const Tensor<__nv_bfloat16> &input,
   return down_proj_output;
 }
 
-Tensor<__nv_bfloat16> Embedding::operator()(const Tensor<int> &input,
-                                            bool use_cache) {
+Tensor<__nv_bfloat16> Embedding::operator()(const Tensor<int> &input) {
   assert(input.elems() <= _max_sequence_length &&
          "input sequence length exceeds preallocated capacity");
 
   const auto sequence_length = input.elems();
-  const auto offset =
-      use_cache && sequence_length > 0 ? sequence_length - 1 : 0;
-  const auto elems_to_compute =
-      use_cache && sequence_length > 0 ? 1 : sequence_length;
   const dim3 threads_per_block(1024);
-  const dim3 num_blocks(ceil_div(elems_to_compute, threads_per_block.x));
+  const dim3 num_blocks(ceil_div(input.elems(), threads_per_block.x));
   lookup_embeddings<<<num_blocks, threads_per_block>>>(
-      _out_storage->data + offset * _dimension, input.storage->data + offset,
-      _embedding_table.storage->data, elems_to_compute, _dimension);
+      _out_storage->data, input.storage->data, _embedding_table.storage->data,
+      sequence_length, _dimension);
 
   auto shape = input.shape;
   shape[input.dimensions] = _dimension;

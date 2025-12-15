@@ -35,8 +35,7 @@ public:
                                bool use_activation,
                                std::size_t max_sequence_length);
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input,
-                                   bool use_cache = false);
+  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
 };
 
 class RMSNorm {
@@ -56,8 +55,7 @@ public:
   static RMSNorm from_parameter(const Tensor<__nv_bfloat16> &weight,
                                 float epsilon, std::size_t max_sequence_length);
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input,
-                                   bool use_cache = false);
+  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
 };
 
 class GroupedQueryAttention {
@@ -139,8 +137,7 @@ public:
   static Embedding from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
                                   std::size_t max_sequence_length);
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<int> &input,
-                                   bool use_cache = false);
+  Tensor<__nv_bfloat16> operator()(const Tensor<int> &input);
 };
 
 class Sampler {
