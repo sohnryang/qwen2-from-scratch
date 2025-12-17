@@ -68,8 +68,6 @@ private:
   Dense _o_layer;
   Tensor<float> _cos_basis;
   Tensor<float> _sin_basis;
-  std::shared_ptr<Storage<__nv_bfloat16>> _q_proj_rope_out_storage;
-  std::shared_ptr<Storage<__nv_bfloat16>> _k_proj_rope_out_storage;
   std::shared_ptr<Storage<__nv_bfloat16>> _attention_out_storage;
 
 public:

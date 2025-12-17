@@ -329,8 +329,7 @@ __global__ void precompute_rope_bases(float *__restrict__ cos_basis_out,
   sin_basis_out[row * half_dimension + col] = sinf(row * freq);
 }
 
-__global__ void rope(__nv_bfloat16 *__restrict__ out,
-                     const __nv_bfloat16 *__restrict__ x,
+__global__ void rope(__nv_bfloat16 *out, const __nv_bfloat16 *x,
                      const float *__restrict__ cos_basis,
                      const float *__restrict__ sin_basis,
                      std::size_t sequence_length, std::size_t heads,

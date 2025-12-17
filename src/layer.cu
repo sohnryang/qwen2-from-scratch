@@ -107,10 +107,6 @@ GroupedQueryAttention::GroupedQueryAttention(
           {.shape = _cos_basis.shape,
            .dimensions = 2,
            .storage = std::make_shared<Storage<float>>(_cos_basis.elems())}),
-      _q_proj_rope_out_storage(std::make_shared<Storage<__nv_bfloat16>>(
-          _max_sequence_length * _q_layer.out_features())),
-      _k_proj_rope_out_storage(std::make_shared<Storage<__nv_bfloat16>>(
-          _max_sequence_length * _k_layer.out_features())),
       _attention_out_storage(std::make_shared<Storage<__nv_bfloat16>>(
           _kv_heads * _groups * _max_sequence_length *
           (_k_layer.out_features() / _kv_heads))) {
@@ -163,25 +159,24 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   {
     const dim3 num_blocks(ceil_div(q_proj.elems() / 2, threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
-        _q_proj_rope_out_storage->data, q_proj.storage->data,
-        _cos_basis.storage->data, _sin_basis.storage->data, sequence_length_q,
-        _kv_heads * _groups, dimension / 2);
+        q_proj.storage->data, q_proj.storage->data, _cos_basis.storage->data,
+        _sin_basis.storage->data, sequence_length_q, _kv_heads * _groups,
+        dimension / 2);
   }
   const auto q_proj_rope =
       Tensor<__nv_bfloat16>{.shape = q_proj.shape,
                             .dimensions = q_proj.dimensions,
-                            .storage = _q_proj_rope_out_storage};
+                            .storage = q_proj.storage};
   {
     const dim3 num_blocks(ceil_div(k_proj.elems() / 2, threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
-        _k_proj_rope_out_storage->data, k_proj.storage->data,
-        _cos_basis.storage->data, _sin_basis.storage->data, sequence_length_kv,
-        _kv_heads, dimension / 2);
+        k_proj.storage->data, k_proj.storage->data, _cos_basis.storage->data,
+        _sin_basis.storage->data, sequence_length_kv, _kv_heads, dimension / 2);
   }
   const auto k_proj_rope =
       Tensor<__nv_bfloat16>{.shape = k_proj.shape,
                             .dimensions = k_proj.dimensions,
-                            .storage = _k_proj_rope_out_storage};
+                            .storage = k_proj.storage};
   assert(k_proj_rope.elems() == v_proj.elems() &&
          q_proj_rope.elems() / sequence_length_q ==
              k_proj_rope.elems() / sequence_length_kv * _groups &&
