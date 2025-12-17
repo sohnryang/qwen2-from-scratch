@@ -12,27 +12,22 @@ class Dense {
 private:
   std::size_t _in_features;
   std::size_t _out_features;
-  std::size_t _max_sequence_length;
   bool _use_activation;
   Tensor<__nv_bfloat16> _weight;
   std::optional<Tensor<__nv_bfloat16>> _bias;
 
 public:
-  Dense(std::size_t in_features, std::size_t out_features, bool use_activation,
-        std::size_t max_sequence_length);
+  Dense(std::size_t in_features, std::size_t out_features, bool use_activation);
 
   std::size_t in_features() const { return _in_features; }
   std::size_t out_features() const { return _out_features; }
-  std::size_t max_sequence_length() const { return _max_sequence_length; }
 
   static Dense from_parameters(const Tensor<__nv_bfloat16> &weight,
-                               bool use_activation,
-                               std::size_t max_sequence_length);
+                               bool use_activation);
 
   static Dense from_parameters(const Tensor<__nv_bfloat16> &weight,
                                const Tensor<__nv_bfloat16> &bias,
-                               bool use_activation,
-                               std::size_t max_sequence_length);
+                               bool use_activation);
 
   Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
 };
@@ -41,17 +36,15 @@ class RMSNorm {
 private:
   std::size_t _dimensions;
   float _epsilon;
-  std::size_t _max_sequence_length;
   Tensor<__nv_bfloat16> _weight;
 
 public:
-  RMSNorm(std::size_t dimensions, float epsilon,
-          std::size_t max_sequence_length);
+  RMSNorm(std::size_t dimensions, float epsilon);
 
   std::size_t dimensions() const { return _dimensions; }
 
   static RMSNorm from_parameter(const Tensor<__nv_bfloat16> &weight,
-                                float epsilon, std::size_t max_sequence_length);
+                                float epsilon);
 
   Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
 };
@@ -118,19 +111,15 @@ class Embedding {
 private:
   std::size_t _table_size;
   std::size_t _dimension;
-  std::size_t _max_sequence_length;
   Tensor<__nv_bfloat16> _embedding_table;
 
 public:
-  Embedding(std::size_t table_size, std::size_t dimension,
-            std::size_t max_sequence_length);
+  Embedding(std::size_t table_size, std::size_t dimension);
 
   std::size_t table_size() const { return _table_size; }
   std::size_t dimension() const { return _dimension; }
-  std::size_t max_sequence_length() const { return _max_sequence_length; }
 
-  static Embedding from_parameter(const Tensor<__nv_bfloat16> &embedding_table,
-                                  std::size_t max_sequence_length);
+  static Embedding from_parameter(const Tensor<__nv_bfloat16> &embedding_table);
 
   Tensor<__nv_bfloat16> operator()(const Tensor<int> &input);
 };

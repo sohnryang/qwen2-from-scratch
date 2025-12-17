@@ -14,8 +14,6 @@ Tensor<__nv_bfloat16> Dense::operator()(const Tensor<__nv_bfloat16> &input) {
   assert(input.shape[input.dimensions - 1] == _in_features &&
          "invalid input dimension");
   const auto batches = input.elems() / _in_features;
-  assert(batches <= _max_sequence_length &&
-         "input sequence length exceeds preallocated capacity");
   const dim3 threads_per_block(16, 16);
   const dim3 num_blocks(ceil_div(batches, threads_per_block.x),
                         ceil_div(_out_features, threads_per_block.y));
@@ -43,8 +41,6 @@ Tensor<__nv_bfloat16> RMSNorm::operator()(const Tensor<__nv_bfloat16> &input) {
   assert(input.shape[input.dimensions - 1] == _dimensions &&
          "invalid input dimension");
   const auto batches = input.elems() / _dimensions;
-  assert(batches <= _max_sequence_length &&
-         "input sequence length exceeds preallocated capacity");
 
   Tensor<__nv_bfloat16> reshaped =
       input.reshape({-1, static_cast<int>(_dimensions)});
@@ -118,11 +114,6 @@ GroupedQueryAttention::GroupedQueryAttention(
          "KV layer output dimension should be multiple of KV heads");
   assert(_q_layer.out_features() % (kv_heads * groups) == 0 &&
          "Q layer output dimension should be multiple of Q heads");
-  assert(_q_layer.max_sequence_length() == _max_sequence_length &&
-         _k_layer.max_sequence_length() == _max_sequence_length &&
-         _v_layer.max_sequence_length() == _max_sequence_length &&
-         _o_layer.max_sequence_length() == _max_sequence_length &&
-         "dense layer max sequence length should match attention max length");
 
   const auto half_dimension = _k_layer.out_features() / _kv_heads / 2;
   const dim3 threads_per_block(1024);
@@ -266,9 +257,6 @@ Qwen2TransformerBlock::operator()(const Tensor<__nv_bfloat16> &input,
 }
 
 Tensor<__nv_bfloat16> Embedding::operator()(const Tensor<int> &input) {
-  assert(input.elems() <= _max_sequence_length &&
-         "input sequence length exceeds preallocated capacity");
-
   const auto sequence_length = input.elems();
   const dim3 threads_per_block(1024);
   const dim3 num_blocks(ceil_div(input.elems(), threads_per_block.x));
