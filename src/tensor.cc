@@ -26,18 +26,8 @@ template <typename T> Storage<T>::~Storage() {
 }
 
 template <typename T>
-Storage<T>::Storage(const Storage &other) : elems{other.elems} {
-  CHECK_CUDA(cudaMemcpy(data, other.data, sizeof(T) * other.elems,
-                        cudaMemcpyDeviceToDevice));
-}
-
-template <typename T>
 Storage<T>::Storage(Storage &&other) noexcept
     : data{std::exchange(other.data, nullptr)}, elems{other.elems} {}
-
-template <typename T> Storage<T> &Storage<T>::operator=(const Storage &other) {
-  return *this = Storage(other);
-}
 
 template <typename T>
 Storage<T> &Storage<T>::operator=(Storage &&other) noexcept {

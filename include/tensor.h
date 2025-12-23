@@ -16,9 +16,8 @@ template <typename T> struct Storage {
 
   ~Storage();
   Storage() = default;
-  Storage(const Storage &);
+  Storage(const Storage &) = delete;
   Storage(Storage &&) noexcept;
-  Storage &operator=(const Storage &);
   Storage &operator=(Storage &&) noexcept;
 
   Storage(std::size_t elems_);
