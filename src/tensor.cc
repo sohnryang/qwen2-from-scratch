@@ -37,7 +37,8 @@ Storage<T> &Storage<T>::operator=(Storage &&other) noexcept {
 }
 
 template <typename T> Storage<T>::Storage(std::size_t elems_) : elems{elems_} {
-  CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(T)));
+  if (elems_)
+    CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(T)));
 }
 
 template <typename T>
