@@ -17,23 +17,33 @@ Tensor<__nv_bfloat16> Dense::operator()(const Tensor<__nv_bfloat16> &input) {
   const dim3 threads_per_block(16, 16);
   const dim3 num_blocks(ceil_div(batches, threads_per_block.x),
                         ceil_div(_out_features, threads_per_block.y));
-  auto out_storage =
-      std::make_shared<Storage<__nv_bfloat16>>(batches * _out_features);
+  auto out_storage = _cache;
+  const auto out_offset = _cached_batches * _out_features;
+  if (!_cache->elems)
+    out_storage =
+        std::make_shared<Storage<__nv_bfloat16>>(batches * _out_features);
+  else
+    _cached_batches += batches;
+
   if (_use_activation)
     dense<<<num_blocks, threads_per_block>>>(
-        out_storage->data, input.storage->data, _weight.storage->data,
-        _bias ? _bias->storage->data : nullptr, batches, _in_features,
-        _out_features);
+        out_storage->data + out_offset, input.storage->data,
+        _weight.storage->data, _bias ? _bias->storage->data : nullptr, batches,
+        _in_features, _out_features);
   else
     gemm_transposed<<<num_blocks, threads_per_block>>>(
-        out_storage->data, input.storage->data, _weight.storage->data,
-        _bias ? _bias->storage->data : nullptr, 1.0f, batches, _out_features,
-        _in_features);
+        out_storage->data + out_offset, input.storage->data,
+        _weight.storage->data, _bias ? _bias->storage->data : nullptr, 1.0f,
+        batches, _out_features, _in_features);
 
   Tensor<__nv_bfloat16> res = {.dimensions = input.dimensions,
                                .storage = out_storage};
   std::copy_n(input.shape.begin(), input.dimensions - 1, res.shape.begin());
   res.shape[input.dimensions - 1] = _out_features;
+  if (_cache->elems) {
+    assert(res.dimensions == 2 && "cached dense layer only allow 2D tensors");
+    res.shape[0] = _cached_batches;
+  }
   return res;
 }
 

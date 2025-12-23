@@ -15,19 +15,23 @@ private:
   bool _use_activation;
   Tensor<__nv_bfloat16> _weight;
   std::optional<Tensor<__nv_bfloat16>> _bias;
+  std::shared_ptr<Storage<__nv_bfloat16>> _cache;
+  std::size_t _cached_batches = 0;
 
 public:
-  Dense(std::size_t in_features, std::size_t out_features, bool use_activation);
+  Dense(std::size_t in_features, std::size_t out_features, bool use_activation,
+        std::size_t cache_size);
 
   std::size_t in_features() const { return _in_features; }
   std::size_t out_features() const { return _out_features; }
+  std::size_t cached_batches() const { return _cached_batches; }
 
   static Dense from_parameters(const Tensor<__nv_bfloat16> &weight,
-                               bool use_activation);
+                               bool use_activation, std::size_t cache_size = 0);
 
   static Dense from_parameters(const Tensor<__nv_bfloat16> &weight,
                                const Tensor<__nv_bfloat16> &bias,
-                               bool use_activation);
+                               bool use_activation, std::size_t cache_size = 0);
 
   Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
 };
