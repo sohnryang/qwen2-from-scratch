@@ -65,6 +65,27 @@ def create_dense_test_file(data_dir: str):
     )
 
 
+def create_dense_cache_test_file(data_dir: str):
+    weight = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.bfloat16)
+    bias = torch.tensor([1, -1], dtype=torch.bfloat16)
+    input_a = torch.tensor([[1, 0, 2], [3, 1, 4]], dtype=torch.bfloat16)
+    input_b = torch.tensor([[-1, 2, 0], [0, 1, -2]], dtype=torch.bfloat16)
+    expected_a = input_a @ weight.T + bias
+    expected_b = input_b @ weight.T + bias
+    expected_cached = torch.cat([expected_a, expected_b], dim=0)
+    save_file(
+        {
+            "weight": weight,
+            "bias": bias,
+            "input_a": input_a,
+            "input_b": input_b,
+            "expected_a": expected_a,
+            "expected_cached": expected_cached,
+        },
+        os.path.join(data_dir, "dense_cache_test.safetensors"),
+    )
+
+
 def create_reshape_test_file(data_dir: str):
     arange_2x3x4 = torch.arange(2 * 3 * 4, dtype=torch.bfloat16).reshape((2, 3, 4))
     save_file(
@@ -214,6 +235,7 @@ if __name__ == "__main__":
     create_safetensors_test_file(parsed.data_dir)
     create_matmul_test_file(parsed.data_dir)
     create_dense_test_file(parsed.data_dir)
+    create_dense_cache_test_file(parsed.data_dir)
     create_reshape_test_file(parsed.data_dir)
     create_rmsnorm_test_file(parsed.data_dir)
     create_softmax_test_file(parsed.data_dir)

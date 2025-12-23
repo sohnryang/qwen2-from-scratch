@@ -72,6 +72,27 @@ TEST(LayerTest, DenseWithActivation) {
   assert_tensors_equal(actual_out, expected_out);
 }
 
+TEST(LayerTest, DenseCache) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "dense_cache_test.safetensors").string());
+  const auto &weight = tensors.at("weight");
+  const auto &bias = tensors.at("bias");
+  const auto &input_a = tensors.at("input_a");
+  const auto &input_b = tensors.at("input_b");
+  const auto &expected_a = tensors.at("expected_a");
+  const auto &expected_cached = tensors.at("expected_cached");
+
+  Dense dense_layer = Dense::from_parameters(weight, bias, false, 4);
+
+  Tensor<__nv_bfloat16> actual_a = dense_layer(input_a);
+  assert_tensors_equal(actual_a, expected_a);
+  EXPECT_EQ(dense_layer.cached_batches(), expected_a.shape[0]);
+
+  Tensor<__nv_bfloat16> actual_cached = dense_layer(input_b);
+  assert_tensors_equal(actual_cached, expected_cached);
+  EXPECT_EQ(dense_layer.cached_batches(), expected_cached.shape[0]);
+}
+
 TEST(LayerTest, RMSNorm) {
   auto tensors = load_from_safetensors(
       (fs::path(TEST_DATA_DIR) / "rmsnorm_test.safetensors").string());
