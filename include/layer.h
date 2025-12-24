@@ -65,7 +65,6 @@ private:
   Dense _o_layer;
   Tensor<float> _cos_basis;
   Tensor<float> _sin_basis;
-  std::shared_ptr<Storage<__nv_bfloat16>> _attention_out_storage;
 
 public:
   GroupedQueryAttention(std::size_t kv_heads, std::size_t groups,

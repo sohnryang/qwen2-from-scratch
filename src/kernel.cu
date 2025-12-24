@@ -331,7 +331,7 @@ __global__ void precompute_rope_bases(float *__restrict__ cos_basis_out,
 
 __global__ void rope(__nv_bfloat16 *out, const __nv_bfloat16 *x,
                      const float *__restrict__ cos_basis,
-                     const float *__restrict__ sin_basis,
+                     const float *__restrict__ sin_basis, std::size_t offset,
                      std::size_t sequence_length, std::size_t heads,
                      std::size_t half_dimension) {
   const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -350,9 +350,9 @@ __global__ void rope(__nv_bfloat16 *out, const __nv_bfloat16 *x,
       sequence_idx * heads * dimension + head * dimension + vector_idx2;
   const auto x2 = __bfloat162float(x[x2_idx]);
   const auto cos_basis_elem =
-      cos_basis[sequence_idx * half_dimension + vector_idx1];
+      cos_basis[(sequence_idx + offset) * half_dimension + vector_idx1];
   const auto sin_basis_elem =
-      sin_basis[sequence_idx * half_dimension + vector_idx1];
+      sin_basis[(sequence_idx + offset) * half_dimension + vector_idx1];
   out[x1_idx] = __float2bfloat16(x1 * cos_basis_elem - x2 * sin_basis_elem);
   out[x2_idx] = __float2bfloat16(x2 * cos_basis_elem + x1 * sin_basis_elem);
 }

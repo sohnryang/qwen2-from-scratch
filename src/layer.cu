@@ -112,10 +112,7 @@ GroupedQueryAttention::GroupedQueryAttention(
       _sin_basis(
           {.shape = _cos_basis.shape,
            .dimensions = 2,
-           .storage = std::make_shared<Storage<float>>(_cos_basis.elems())}),
-      _attention_out_storage(std::make_shared<Storage<__nv_bfloat16>>(
-          _kv_heads * _groups * _max_sequence_length *
-          (_k_layer.out_features() / _kv_heads))) {
+           .storage = std::make_shared<Storage<float>>(_cos_basis.elems())}) {
   assert(_k_layer.out_features() == _v_layer.out_features() &&
          "K and V dimensions mismatch");
   assert(_q_layer.out_features() % _k_layer.out_features() == 0 &&
@@ -137,6 +134,9 @@ GroupedQueryAttention::GroupedQueryAttention(
 Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const Tensor<__nv_bfloat16> &input_q, const Tensor<__nv_bfloat16> &input_k,
     const Tensor<__nv_bfloat16> &input_v, bool causal_mask) {
+  assert(_k_layer.cached_batches() == _v_layer.cached_batches() &&
+         "K and V caches should hold equal number of tokens");
+  const auto cached_tokens = _k_layer.cached_batches();
   const auto q_proj = _q_layer(input_q);
   const auto k_proj = _k_layer(input_k);
   const auto v_proj = _v_layer(input_v);
@@ -144,16 +144,11 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   assert(q_proj.dimensions == k_proj.dimensions &&
          k_proj.dimensions == v_proj.dimensions &&
          "QKV dimension should match");
-  assert(q_proj.shape[k_proj.dimensions - 2] ==
-             k_proj.shape[v_proj.dimensions - 2] &&
-         k_proj.shape[k_proj.dimensions - 2] ==
+  assert(k_proj.shape[k_proj.dimensions - 2] ==
              v_proj.shape[v_proj.dimensions - 2] &&
-         "QKV sequence length should match");
+         "KV sequence length should match");
   const auto sequence_length_q = q_proj.shape[q_proj.dimensions - 2];
   const auto sequence_length_kv = k_proj.shape[q_proj.dimensions - 2];
-  assert(sequence_length_q <= _max_sequence_length &&
-         sequence_length_kv <= _max_sequence_length &&
-         "sequence length exceeds preallocated capacity");
   const auto dimension = _k_layer.out_features() / _kv_heads;
   assert(dimension % 2 == 0 && "Q and K dimension should be even");
   const dim3 threads_per_block(1024);
@@ -161,31 +156,33 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const dim3 num_blocks(ceil_div(q_proj.elems() / 2, threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
         q_proj.storage->data, q_proj.storage->data, _cos_basis.storage->data,
-        _sin_basis.storage->data, sequence_length_q, _kv_heads * _groups,
-        dimension / 2);
+        _sin_basis.storage->data, cached_tokens, sequence_length_q,
+        _kv_heads * _groups, dimension / 2);
   }
   const auto q_proj_rope =
       Tensor<__nv_bfloat16>{.shape = q_proj.shape,
                             .dimensions = q_proj.dimensions,
                             .storage = q_proj.storage};
   {
-    const dim3 num_blocks(ceil_div(k_proj.elems() / 2, threads_per_block.x));
+    const dim3 num_blocks(
+        ceil_div((k_proj.elems() - cached_tokens * _k_layer.out_features()) / 2,
+                 threads_per_block.x));
     rope<<<num_blocks, threads_per_block>>>(
-        k_proj.storage->data, k_proj.storage->data, _cos_basis.storage->data,
-        _sin_basis.storage->data, sequence_length_kv, _kv_heads, dimension / 2);
+        k_proj.storage->data + cached_tokens * _k_layer.out_features(),
+        k_proj.storage->data + cached_tokens * _k_layer.out_features(),
+        _cos_basis.storage->data, _sin_basis.storage->data, cached_tokens,
+        sequence_length_kv - cached_tokens, _kv_heads, dimension / 2);
   }
   const auto k_proj_rope =
       Tensor<__nv_bfloat16>{.shape = k_proj.shape,
                             .dimensions = k_proj.dimensions,
                             .storage = k_proj.storage};
   assert(k_proj_rope.elems() == v_proj.elems() &&
-         q_proj_rope.elems() / sequence_length_q ==
-             k_proj_rope.elems() / sequence_length_kv * _groups &&
-         "QKV element count should match");
+         "KV element count should match");
   const auto scores_elems =
       _kv_heads * _groups * sequence_length_q * sequence_length_kv;
   auto scores_out_storage = std::make_shared<Storage<float>>(
-      _kv_heads * _groups * _max_sequence_length * _max_sequence_length);
+      _kv_heads * _groups * sequence_length_q * sequence_length_kv);
   {
     const dim3 num_blocks(ceil_div(scores_elems, threads_per_block.x));
     if (causal_mask)
@@ -208,17 +205,19 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   }
   const auto attention_elems =
       _kv_heads * _groups * sequence_length_q * dimension;
+  auto attention_out_storage =
+      std::make_shared<Storage<__nv_bfloat16>>(attention_elems);
   {
     const dim3 num_blocks(ceil_div(attention_elems, 1024));
     grouped_query_attention_output<<<num_blocks, threads_per_block>>>(
-        _attention_out_storage->data, scores_out_storage->data,
+        attention_out_storage->data, scores_out_storage->data,
         v_proj.storage->data, sequence_length_q, sequence_length_kv, dimension,
         _kv_heads, _groups);
   }
   const auto o_proj = _o_layer(
-      Tensor<__nv_bfloat16>{.shape = {attention_elems},
-                            .dimensions = 1,
-                            .storage = _attention_out_storage}
+      Tensor{.shape = {attention_elems},
+             .dimensions = 1,
+             .storage = attention_out_storage}
           .reshape({static_cast<int>(sequence_length_q),
                     static_cast<int>(_kv_heads * _groups * dimension)}));
   return o_proj;
