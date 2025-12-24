@@ -98,7 +98,8 @@ std::vector<int> Qwen2Model::generate(const std::vector<int> &user_prompt) {
   do {
     if (_cached_tokens + model_input.elems() > _max_sequence_length) {
       _cached_tokens = prev_cached_tokens;
-      // TODO: rollback caches
+      for (auto &block : _transformer_blocks)
+        block.rollback(prev_cached_tokens);
       return {};
     }
     _cached_tokens += model_input.elems();

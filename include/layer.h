@@ -34,6 +34,8 @@ public:
                                bool use_activation, std::size_t cache_size = 0);
 
   Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
+
+  void rollback(std::size_t previous_cached_batches);
 };
 
 class RMSNorm {
@@ -82,6 +84,8 @@ public:
                                    const Tensor<__nv_bfloat16> &input_k,
                                    const Tensor<__nv_bfloat16> &input_v,
                                    bool causal_mask = false);
+
+  void rollback(std::size_t previous_cached_batches);
 };
 
 class Qwen2TransformerBlock {
@@ -108,6 +112,8 @@ public:
 
   Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input,
                                    bool causal_mask = true);
+
+  void rollback(std::size_t previous_cached_batches);
 };
 
 class Embedding {

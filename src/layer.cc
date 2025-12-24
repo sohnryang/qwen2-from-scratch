@@ -41,6 +41,11 @@ Dense Dense::from_parameters(const Tensor<__nv_bfloat16> &weight,
   return dense;
 }
 
+void Dense::rollback(std::size_t previous_cached_batches) {
+  assert(_cache->data && "KV cache should be used");
+  _cached_batches = previous_cached_batches;
+}
+
 RMSNorm::RMSNorm(std::size_t dimensions, float epsilon)
     : _dimensions{dimensions}, _epsilon{epsilon},
       _weight{.shape = {_dimensions},
@@ -54,6 +59,11 @@ RMSNorm RMSNorm::from_parameter(const Tensor<__nv_bfloat16> &weight,
   RMSNorm rmsnorm(weight.shape[0], epsilon);
   rmsnorm._weight = weight;
   return rmsnorm;
+}
+
+void GroupedQueryAttention::rollback(std::size_t previous_cached_batches) {
+  _k_layer.rollback(previous_cached_batches);
+  _v_layer.rollback(previous_cached_batches);
 }
 
 Qwen2TransformerBlock::Qwen2TransformerBlock(
@@ -79,6 +89,10 @@ Qwen2TransformerBlock::Qwen2TransformerBlock(
          _down_proj_layer.out_features() ==
              _attention_layer.o_layer().out_features() &&
          "attention layer and MLP layer dimensions should match");
+}
+
+void Qwen2TransformerBlock::rollback(std::size_t previous_cached_batches) {
+  _attention_layer.rollback(previous_cached_batches);
 }
 
 Embedding::Embedding(std::size_t table_size, std::size_t dimension)
