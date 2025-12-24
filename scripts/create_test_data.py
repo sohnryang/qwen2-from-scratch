@@ -134,19 +134,41 @@ def create_transformer_block_test_file(data_dir: str):
     model = transformers.AutoModelForCausalLM.from_pretrained(
         "Qwen/Qwen2-1.5B-Instruct", dtype="auto", device_map="auto"
     )
-    prompt = "How do I write inference kernels for Qwen2 model in CUDA, from scratch?"
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": prompt},
-    ]
     text = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "user",
+                "content": "How do I write inference kernels for Qwen2 model in CUDA, from scratch?",
+            },
+        ],
+        tokenize=False,
+        add_generation_prompt=True,
     )
     model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+    cached_tokens = model_inputs["input_ids"].numel()
 
     with torch.no_grad():
         model_outputs = model(
             **model_inputs, use_cache=False, output_hidden_states=True
+        )
+        generated_tokens = model.generate(**model_inputs)
+    next_user_message_text = tokenizer.apply_chat_template(
+        [{"role": "user", "content": "Can you summarize the response above?"}],
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    next_user_message_tokenized = tokenizer(
+        [next_user_message_text], return_tensors="pt"
+    ).to(model.device)
+    appended_input_ids = torch.cat((model_inputs["input_ids"], generated_tokens, next_user_message_tokenized["input_ids"]), dim=-1)  # type: ignore
+    model_inputs_appended = {
+        "input_ids": appended_input_ids,
+        "attention_mask": torch.ones_like(appended_input_ids),
+    }
+    with torch.no_grad():
+        model_outputs_appended = model(
+            **model_inputs_appended, use_cache=False, output_hidden_states=True
         )
 
     weights = dict(model.named_parameters())
@@ -168,6 +190,8 @@ def create_transformer_block_test_file(data_dir: str):
             "down_proj_weight": weights["model.layers.0.mlp.down_proj.weight"],
             "in": model_outputs[1][0].squeeze(0),
             "out": model_outputs[1][1].squeeze(0),
+            "in_next": model_outputs_appended[1][0][:, cached_tokens:].squeeze(),
+            "out_next": model_outputs_appended[1][1][:, cached_tokens:].squeeze(),
         },
         os.path.join(data_dir, "transformer_block_test.safetensors"),
     )

@@ -114,9 +114,12 @@ TEST(LayerTest, Qwen2TransformerBlock) {
           .string());
   const auto &input = tensors.at("in");
   const auto &expected_out = tensors.at("out");
+  const auto &input_next = tensors.at("in_next");
+  const auto &expected_out_next = tensors.at("out_next");
 
   const float rms_norm_eps = 1e-6;
-  const auto input_sequence_length = input.elems() / input.shape[1];
+  const auto max_sequence_length =
+      (input.elems() + input_next.elems()) / input.shape[1];
   RMSNorm input_norm_layer =
       RMSNorm::from_parameter(tensors.at("input_norm_weight"), rms_norm_eps);
   RMSNorm post_attention_norm_layer =
@@ -128,13 +131,13 @@ TEST(LayerTest, Qwen2TransformerBlock) {
 
   Dense q_layer = Dense::from_parameters(tensors.at("q_weight"),
                                          tensors.at("q_bias"), false);
-  Dense k_layer = Dense::from_parameters(tensors.at("k_weight"),
-                                         tensors.at("k_bias"), false);
-  Dense v_layer = Dense::from_parameters(tensors.at("v_weight"),
-                                         tensors.at("v_bias"), false);
+  Dense k_layer = Dense::from_parameters(
+      tensors.at("k_weight"), tensors.at("k_bias"), false, max_sequence_length);
+  Dense v_layer = Dense::from_parameters(
+      tensors.at("v_weight"), tensors.at("v_bias"), false, max_sequence_length);
   Dense o_layer = Dense::from_parameters(tensors.at("o_weight"), false);
   GroupedQueryAttention attention_layer(num_kv_heads, groups,
-                                        input_sequence_length, encoding_base,
+                                        max_sequence_length, encoding_base,
                                         q_layer, k_layer, v_layer, o_layer);
   Dense gate_proj_layer =
       Dense::from_parameters(tensors.at("gate_proj_weight"), true);
@@ -147,8 +150,10 @@ TEST(LayerTest, Qwen2TransformerBlock) {
       gate_proj_layer, up_proj_layer, down_proj_layer);
 
   Tensor<__nv_bfloat16> actual_out = transformer_block(input, true);
-
   assert_tensors_near(actual_out, expected_out);
+
+  Tensor<__nv_bfloat16> actual_out_next = transformer_block(input_next, true);
+  assert_tensors_near(actual_out_next, expected_out_next);
 }
 
 TEST(LayerTest, Embedding) {
