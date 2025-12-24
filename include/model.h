@@ -18,7 +18,7 @@ private:
 
   const int _eos_token;
   const std::size_t _max_sequence_length;
-  Tensor<int> _prompt;
+  std::size_t _cached_tokens = 0;
 
 public:
   Qwen2Model(const Embedding &embedding_layer,
@@ -30,8 +30,6 @@ public:
   from_parameters(const std::map<std::string, Tensor<__nv_bfloat16>> &weights,
                   std::size_t max_sequence_length = 8192,
                   int eos_token = 151645);
-
-  bool prefill(const std::vector<int> &prompt);
 
   std::vector<int> generate(const std::vector<int> &user_prompt);
 };

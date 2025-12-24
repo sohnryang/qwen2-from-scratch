@@ -26,9 +26,6 @@ Qwen2Model::Qwen2Model(
                               _max_sequence_length;
                      }) &&
          "max sequence length mismatch");
-  _prompt = {.shape = {0},
-             .dimensions = 1,
-             .storage = std::make_shared<Storage<int>>(_max_sequence_length)};
 }
 
 Qwen2Model Qwen2Model::from_parameters(
@@ -51,10 +48,12 @@ Qwen2Model Qwen2Model::from_parameters(
     const auto q_layer = Dense::from_parameters(q_weight, q_bias, false);
     const auto k_weight = weights.at(key_prefix + ".self_attn.k_proj.weight");
     const auto k_bias = weights.at(key_prefix + ".self_attn.k_proj.bias");
-    const auto k_layer = Dense::from_parameters(k_weight, k_bias, false);
+    const auto k_layer =
+        Dense::from_parameters(k_weight, k_bias, false, max_sequence_length);
     const auto v_weight = weights.at(key_prefix + ".self_attn.v_proj.weight");
     const auto v_bias = weights.at(key_prefix + ".self_attn.v_proj.bias");
-    const auto v_layer = Dense::from_parameters(v_weight, v_bias, false);
+    const auto v_layer =
+        Dense::from_parameters(v_weight, v_bias, false, max_sequence_length);
     const auto o_weight = weights.at(key_prefix + ".self_attn.o_proj.weight");
     const auto o_layer = Dense::from_parameters(o_weight, false);
 
@@ -88,35 +87,23 @@ Qwen2Model Qwen2Model::from_parameters(
                     sampler, eos_token);
 }
 
-bool Qwen2Model::prefill(const std::vector<int> &prompt) {
-  if (prompt.size() >= _prompt.storage->elems)
-    return false;
-  CHECK_CUDA(cudaMemcpy(_prompt.storage->data, prompt.data(),
-                        prompt.size() * sizeof(int), cudaMemcpyHostToDevice));
-  _prompt.shape[0] += prompt.size();
-  return true;
-}
-
 std::vector<int> Qwen2Model::generate(const std::vector<int> &user_prompt) {
-  int next_token = -1;
-  const auto prev_input_length = _prompt.shape[0];
-  if (prev_input_length + user_prompt.size() >= _prompt.storage->elems)
-    return {};
-
-  CHECK_CUDA(cudaMemcpy(_prompt.storage->data + prev_input_length,
-                        user_prompt.data(), user_prompt.size() * sizeof(int),
-                        cudaMemcpyHostToDevice));
-  _prompt.shape[0] += user_prompt.size();
-
+  int next_token;
+  const auto prev_cached_tokens = _cached_tokens;
+  auto model_input =
+      Tensor{.shape = {user_prompt.size()},
+             .dimensions = 1,
+             .storage = std::make_shared<Storage<int>>(user_prompt)};
   std::vector<int> generated_tokens;
   do {
-    const auto current_input_length = _prompt.shape[0];
-    if (current_input_length == _max_sequence_length) {
-      _prompt.shape[0] = prev_input_length;
+    if (_cached_tokens + model_input.elems() > _max_sequence_length) {
+      _cached_tokens = prev_cached_tokens;
+      // TODO: rollback caches
       return {};
     }
+    _cached_tokens += model_input.elems();
 
-    const auto embedding_out = _embedding_layer(_prompt);
+    const auto embedding_out = _embedding_layer(model_input);
     auto blocks_out = embedding_out;
     for (auto &block : _transformer_blocks)
       blocks_out = block(blocks_out);
@@ -127,10 +114,7 @@ std::vector<int> Qwen2Model::generate(const std::vector<int> &user_prompt) {
     CHECK_CUDA(cudaMemcpy(&next_token, sampler_out.storage->data, sizeof(int),
                           cudaMemcpyDeviceToHost));
     generated_tokens.push_back(next_token);
-    CHECK_CUDA(cudaMemcpy(_prompt.storage->data + current_input_length,
-                          sampler_out.storage->data, sizeof(int),
-                          cudaMemcpyDeviceToDevice));
-    _prompt.shape[0]++;
+    model_input = sampler_out;
   } while (next_token != _eos_token);
   return generated_tokens;
 }

@@ -94,20 +94,21 @@ int main(int argc, char **argv) {
   const auto tokenizer = load_tokenizer(tokenizer_filename);
 
   const std::string BOS = "<|im_start|>", EOS = "<|im_end|>";
-  std::string prompt = BOS + "system\n" + system_prompt + EOS + "\n";
-  const auto tokenized_prompt = tokenizer->Encode(prompt);
-  if (!model.prefill(tokenized_prompt)) {
-    std::cerr << "System prompt too long." << std::endl;
-    std::exit(1);
-  }
+  std::string system_prompt_with_template =
+      BOS + "system\n" + system_prompt + EOS + "\n";
+  bool prefilled = false;
 
   while (true) {
     std::cout << "User: ";
-    std::string user_prompt;
-    std::getline(std::cin, user_prompt);
+    std::string user_message;
+    std::getline(std::cin, user_message);
 
-    const auto tokenized_user_prompt = tokenizer->Encode(
-        BOS + "user\n" + user_prompt + EOS + "\n" + BOS + "assistant\n");
+    std::string user_prompt;
+    if (!prefilled)
+      user_prompt = system_prompt_with_template;
+    user_prompt +=
+        BOS + "user\n" + user_message + EOS + "\n" + BOS + "assistant\n";
+    const auto tokenized_user_prompt = tokenizer->Encode(user_prompt);
     const auto start = std::chrono::steady_clock::now();
     auto generated_tokens = model.generate(tokenized_user_prompt);
     const auto elapsed = std::chrono::steady_clock::now() - start;
