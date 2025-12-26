@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <format>
 #include <memory>
@@ -87,20 +88,25 @@ Qwen2Model Qwen2Model::from_parameters(
                     sampler, eos_token);
 }
 
-std::vector<int> Qwen2Model::generate(const std::vector<int> &user_prompt) {
+GenerationResult Qwen2Model::generate(const std::vector<int> &user_prompt) {
   int next_token;
   const auto prev_cached_tokens = _cached_tokens;
   auto model_input =
       Tensor{.shape = {user_prompt.size()},
              .dimensions = 1,
              .storage = std::make_shared<Storage<int>>(user_prompt)};
-  std::vector<int> generated_tokens;
+  GenerationResult result;
+  auto &generated_tokens = result.tokens;
+  const auto start = std::chrono::steady_clock::now();
   do {
     if (_cached_tokens + model_input.elems() > _max_sequence_length) {
       _cached_tokens = prev_cached_tokens;
       for (auto &block : _transformer_blocks)
         block.rollback(prev_cached_tokens);
-      return {};
+      const auto elapsed = std::chrono::steady_clock::now() - start;
+      result.metrics.time_to_first_token = elapsed;
+      result.metrics.total_duration = elapsed;
+      return result;
     }
     _cached_tokens += model_input.elems();
 
@@ -115,7 +121,12 @@ std::vector<int> Qwen2Model::generate(const std::vector<int> &user_prompt) {
     CHECK_CUDA(cudaMemcpy(&next_token, sampler_out.storage->data, sizeof(int),
                           cudaMemcpyDeviceToHost));
     generated_tokens.push_back(next_token);
+    if (result.metrics.time_to_first_token ==
+        std::chrono::steady_clock::duration{})
+      result.metrics.time_to_first_token =
+          std::chrono::steady_clock::now() - start;
     model_input = sampler_out;
   } while (next_token != _eos_token);
-  return generated_tokens;
+  result.metrics.total_duration = std::chrono::steady_clock::now() - start;
+  return result;
 }

@@ -1,6 +1,7 @@
 #include "model.h"
 #include "tensor.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
@@ -25,6 +26,7 @@ static void print_usage() {
             << "  -p <text>   System prompt text (default: \"You're a helpful "
                "assistant.\").\n"
             << "  -l <int>    Maximum sequence length (default: 4096).\n"
+            << "  -b          Run benchmark mode on a preset prompt.\n"
             << "  -m          Print timing stats per response.\n"
             << "  -h          Print this help message.\n";
 }
@@ -48,10 +50,13 @@ int main(int argc, char **argv) {
       system_prompt = "You're a helpful assistant.";
   std::size_t max_sequence_length = 4096;
   bool measure_timing = false;
+  bool benchmark_mode = false;
+  const std::string benchmark_prompt =
+      "Explain the architecture of the Qwen2 language model.";
 #if __has_include(<unistd.h>)
   int next_option;
   do {
-    next_option = getopt(argc, argv, "w:t:i:p:l:mh");
+    next_option = getopt(argc, argv, "w:t:i:p:l:mbh");
     switch (next_option) {
     case 'w':
       weights_filename = optarg;
@@ -67,6 +72,9 @@ int main(int argc, char **argv) {
       continue;
     case 'l':
       max_sequence_length = std::stoi(optarg);
+      continue;
+    case 'b':
+      benchmark_mode = true;
       continue;
     case 'm':
       measure_timing = true;
@@ -98,6 +106,40 @@ int main(int argc, char **argv) {
       BOS + "system\n" + system_prompt + EOS + "\n";
   bool prefilled = false;
 
+  if (benchmark_mode) {
+    std::string user_prompt = system_prompt_with_template + BOS + "user\n" +
+                              benchmark_prompt + EOS + "\n" + BOS +
+                              "assistant\n";
+    const auto tokenized_user_prompt = tokenizer->Encode(user_prompt);
+    auto generation = model.generate(tokenized_user_prompt);
+    auto &generated_tokens = generation.tokens;
+    if (generated_tokens.empty()) {
+      std::cout << "LLM: prompt too long, please try again." << std::endl;
+      return 1;
+    }
+    generated_tokens.pop_back();
+    const auto total_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(
+            generation.metrics.total_duration)
+            .count();
+    const auto ttft_seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(
+            generation.metrics.time_to_first_token)
+            .count();
+    const auto token_count = generated_tokens.size() + 1;
+    const auto tps =
+        static_cast<double>(token_count) / std::max(total_seconds, 1e-9);
+
+    std::cout << "[benchmark] prompt: " << benchmark_prompt << std::endl;
+    std::cout << "[benchmark] LLM: " << tokenizer->Decode(generated_tokens)
+              << std::endl;
+    std::cout << "[benchmark] time_to_first_token=" << ttft_seconds
+              << "s, total_time=" << total_seconds
+              << "s, tokens=" << token_count << ", tokens/s=" << tps
+              << std::endl;
+    return 0;
+  }
+
   while (true) {
     std::cout << "User: ";
     std::string user_message;
@@ -109,9 +151,8 @@ int main(int argc, char **argv) {
     user_prompt +=
         BOS + "user\n" + user_message + EOS + "\n" + BOS + "assistant\n";
     const auto tokenized_user_prompt = tokenizer->Encode(user_prompt);
-    const auto start = std::chrono::steady_clock::now();
-    auto generated_tokens = model.generate(tokenized_user_prompt);
-    const auto elapsed = std::chrono::steady_clock::now() - start;
+    auto generation = model.generate(tokenized_user_prompt);
+    auto &generated_tokens = generation.tokens;
     if (generated_tokens.empty()) {
       std::cout << "LLM: prompt too long, please try again." << std::endl;
       continue;
@@ -120,14 +161,19 @@ int main(int argc, char **argv) {
     std::cout << "LLM: " << tokenizer->Decode(generated_tokens) << std::endl;
     if (measure_timing) {
       const auto seconds =
-          std::chrono::duration_cast<std::chrono::duration<double>>(elapsed)
+          std::chrono::duration_cast<std::chrono::duration<double>>(
+              generation.metrics.total_duration)
+              .count();
+      const auto ttft_seconds =
+          std::chrono::duration_cast<std::chrono::duration<double>>(
+              generation.metrics.time_to_first_token)
               .count();
       const auto token_count = generated_tokens.size() + 1;
       const auto tps =
           static_cast<double>(token_count) / std::max(seconds, 1e-9);
-      std::cout << "[timing] elapsed=" << seconds
-                << "s, tokens=" << generated_tokens.size()
-                << ", tokens/s=" << tps << std::endl;
+      std::cout << "[timing] ttft=" << ttft_seconds << "s, elapsed=" << seconds
+                << "s, tokens=" << token_count << ", tokens/s=" << tps
+                << std::endl;
     }
   }
 }

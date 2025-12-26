@@ -3,10 +3,21 @@
 #include "layer.h"
 #include "tensor.h"
 
+#include <chrono>
 #include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
+
+struct GenerationMetrics {
+  std::chrono::steady_clock::duration time_to_first_token{};
+  std::chrono::steady_clock::duration total_duration{};
+};
+
+struct GenerationResult {
+  std::vector<int> tokens;
+  GenerationMetrics metrics;
+};
 
 class Qwen2Model {
 private:
@@ -31,5 +42,5 @@ public:
                   std::size_t max_sequence_length = 8192,
                   int eos_token = 151645);
 
-  std::vector<int> generate(const std::vector<int> &user_prompt);
+  GenerationResult generate(const std::vector<int> &user_prompt);
 };
