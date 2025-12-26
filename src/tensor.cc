@@ -31,8 +31,9 @@ Storage<T>::Storage(Storage &&other) noexcept
 
 template <typename T>
 Storage<T> &Storage<T>::operator=(Storage &&other) noexcept {
-  std::swap(data, other.data);
-  std::swap(elems, other.elems);
+  using std::swap;
+  swap(data, other.data);
+  swap(elems, other.elems);
   return *this;
 }
 
