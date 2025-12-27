@@ -456,3 +456,22 @@ __global__ void argmax_reduce(const float *__restrict__ in_vals,
     out_indices[out_idx] = shared_max_idx[0];
   }
 }
+
+__global__ void rmsnorm(__nv_bfloat16 *__restrict__ out,
+                        const __nv_bfloat16 *__restrict__ x,
+                        const __nv_bfloat16 *__restrict__ weight,
+                        std::size_t batches, std::size_t n, __nv_bfloat16 eps) {
+  const auto batch = blockIdx.x * blockDim.x + threadIdx.x;
+  if (batch >= batches)
+    return;
+
+  float squared_sum = 0.0f;
+  for (int i = 0; i < n; i++) {
+    const auto elem = __bfloat162float(x[n * batch + i]);
+    squared_sum += elem * elem;
+  }
+  const auto factor = rsqrtf(squared_sum / n + __bfloat162float(eps));
+  for (int i = 0; i < n; i++)
+    out[n * batch + i] = __float2bfloat16(__bfloat162float(x[n * batch + i]) *
+                                          factor * __bfloat162float(weight[i]));
+}

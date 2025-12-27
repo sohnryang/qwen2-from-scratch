@@ -97,3 +97,8 @@ __global__ void argmax_reduce(const float *__restrict__ in_vals,
                               float *__restrict__ out_vals,
                               int *__restrict__ out_indices,
                               std::size_t blocks_in);
+
+__global__ void rmsnorm(__nv_bfloat16 *__restrict__ out,
+                        const __nv_bfloat16 *__restrict__ x,
+                        const __nv_bfloat16 *__restrict__ weight,
+                        std::size_t batches, std::size_t n, __nv_bfloat16 eps);
