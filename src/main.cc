@@ -97,7 +97,10 @@ int main(int argc, char **argv) {
   }
 
   const auto model_weights = load_from_safetensors(weights_filename);
-  auto model = Qwen2Model::from_parameters(model_weights, max_sequence_length);
+  auto model = Qwen2Model::from_parameters(
+      model_weights,
+      12 * max_sequence_length * max_sequence_length * sizeof(float),
+      max_sequence_length * 1536 * sizeof(__nv_bfloat16), max_sequence_length);
 
   const auto tokenizer = load_tokenizer(tokenizer_filename);
 

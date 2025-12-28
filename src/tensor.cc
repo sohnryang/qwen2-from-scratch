@@ -21,7 +21,7 @@
 #include <simdjson.h>
 
 template <typename T> Storage<T>::~Storage() {
-  if (data)
+  if (data && owned)
     CHECK_CUDA(cudaFree(data));
 }
 
@@ -58,6 +58,10 @@ Storage<T>::Storage(const std::vector<T> &host_data) : elems{host_data.size()} {
   CHECK_CUDA(cudaMalloc((void **)&data, bytes));
   CHECK_CUDA(cudaMemcpy(data, host_data.data(), bytes, cudaMemcpyHostToDevice));
 }
+
+template <typename T>
+Storage<T>::Storage(T *data_, std::size_t elems_)
+    : data{data_}, elems{elems_}, owned{false} {}
 
 template <typename T> std::vector<T> Storage<T>::to_host() {
   std::vector<T> host_data(elems);
@@ -100,6 +104,74 @@ template <typename T> std::size_t Tensor<T>::elems() const {
 template class Tensor<__nv_bfloat16>;
 template class Tensor<float>;
 template class Tensor<int>;
+
+ScratchPad::~ScratchPad() {
+  if (_pool)
+    CHECK_CUDA(cudaFree(_pool));
+}
+
+ScratchPad::ScratchPad(ScratchPad &&other) noexcept
+    : _pool{std::exchange(other._pool, nullptr)}, _size{other._size},
+      _used{other._used} {}
+
+ScratchPad &ScratchPad::operator=(ScratchPad &&other) noexcept {
+  using std::swap;
+  swap(_pool, other._pool);
+  swap(_size, other._size);
+  swap(_used, other._used);
+  return *this;
+}
+
+ScratchPad::ScratchPad(std::size_t size) : _size{size} {
+  CHECK_CUDA(cudaMalloc(&_pool, size));
+}
+
+void ScratchPad::reset() { _used = 0; }
+
+template <typename T>
+std::shared_ptr<Storage<T>> ScratchPad::make_storage(std::size_t elems,
+                                                     std::size_t align) {
+  const auto aligned_usage = (_used + align - 1) & ~(align - 1);
+  const auto alloc_size = elems * sizeof(T);
+  if (aligned_usage + alloc_size > _size)
+    return std::make_shared<Storage<T>>(elems);
+
+  const auto res = std::make_shared<Storage<T>>(
+      (T *)((std::uint8_t *)_pool + aligned_usage), elems);
+  _used = aligned_usage + alloc_size;
+  return res;
+}
+template std::shared_ptr<Storage<__nv_bfloat16>>
+ScratchPad::make_storage(std::size_t elems, std::size_t align);
+template std::shared_ptr<Storage<float>>
+ScratchPad::make_storage(std::size_t elems, std::size_t align);
+template std::shared_ptr<Storage<int>>
+ScratchPad::make_storage(std::size_t elems, std::size_t align);
+
+ScratchPadScope::~ScratchPadScope() { _scratchpad.reset(); }
+
+ScratchPadScope::ScratchPadScope(ScratchPad &scratchpad)
+    : _scratchpad{scratchpad} {}
+
+InOutBuffer::~InOutBuffer() {
+  CHECK_CUDA(cudaFree(_inout[0]));
+  CHECK_CUDA(cudaFree(_inout[1]));
+}
+
+InOutBuffer::InOutBuffer(InOutBuffer &&other) noexcept
+    : _inout{std::exchange(other._inout, {})}, _size{other._size} {}
+
+InOutBuffer &InOutBuffer::operator=(InOutBuffer &&other) noexcept {
+  using std::swap;
+  swap(_inout, other._inout);
+  swap(_size, other._size);
+  return *this;
+}
+
+InOutBuffer::InOutBuffer(std::size_t size) : _size{size} {
+  CHECK_CUDA(cudaMalloc(&_inout[0], size));
+  CHECK_CUDA(cudaMalloc(&_inout[1], size));
+}
 
 std::map<std::string, Tensor<__nv_bfloat16>>
 load_from_safetensors(const std::string &filename) {

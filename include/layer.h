@@ -33,7 +33,9 @@ public:
                                const Tensor<__nv_bfloat16> &bias,
                                bool use_activation, std::size_t cache_size = 0);
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
+  Tensor<__nv_bfloat16>
+  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+             const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 
   void rollback(std::size_t previous_cached_batches);
 };
@@ -52,7 +54,9 @@ public:
   static RMSNorm from_parameter(const Tensor<__nv_bfloat16> &weight,
                                 float epsilon);
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
+  Tensor<__nv_bfloat16>
+  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+             const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };
 
 class GroupedQueryAttention {
@@ -80,10 +84,12 @@ public:
   const Dense &v_layer() const { return _v_layer; }
   const Dense &o_layer() const { return _o_layer; }
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input_q,
-                                   const Tensor<__nv_bfloat16> &input_k,
-                                   const Tensor<__nv_bfloat16> &input_v,
-                                   bool causal_mask = false);
+  Tensor<__nv_bfloat16>
+  operator()(const Tensor<__nv_bfloat16> &input_q,
+             const Tensor<__nv_bfloat16> &input_k,
+             const Tensor<__nv_bfloat16> &input_v, bool causal_mask,
+             ScratchPad &scratchpad,
+             const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 
   void rollback(std::size_t previous_cached_batches);
 };
@@ -110,8 +116,9 @@ public:
     return _attention_layer;
   }
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input,
-                                   bool causal_mask = true);
+  Tensor<__nv_bfloat16>
+  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+             const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 
   void rollback(std::size_t previous_cached_batches);
 };
@@ -130,7 +137,9 @@ public:
 
   static Embedding from_parameter(const Tensor<__nv_bfloat16> &embedding_table);
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<int> &input);
+  Tensor<__nv_bfloat16>
+  operator()(const Tensor<int> &input, ScratchPad &scratchpad,
+             const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };
 
 class Sampler {
@@ -146,7 +155,9 @@ public:
 
   std::size_t vocab_size() const { return _vocab_size; }
 
-  Tensor<int> operator()(const Tensor<__nv_bfloat16> &logits);
+  Tensor<int> operator()(const Tensor<__nv_bfloat16> &logits,
+                         ScratchPad &scratchpad,
+                         const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };
 
 class LmHeadDense {
@@ -163,5 +174,7 @@ public:
 
   static LmHeadDense from_parameters(const Tensor<__nv_bfloat16> &weight);
 
-  Tensor<__nv_bfloat16> operator()(const Tensor<__nv_bfloat16> &input);
+  Tensor<__nv_bfloat16>
+  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+             const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };

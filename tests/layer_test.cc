@@ -52,7 +52,8 @@ TEST(LayerTest, DenseNoActivation) {
 
   Dense dense_layer = Dense::from_parameters(weight, bias, false);
 
-  Tensor<__nv_bfloat16> actual_out = dense_layer(input);
+  ScratchPad scratchpad;
+  Tensor<__nv_bfloat16> actual_out = dense_layer(input, scratchpad);
 
   assert_tensors_equal(actual_out, expected_out);
 }
@@ -67,7 +68,8 @@ TEST(LayerTest, DenseWithActivation) {
 
   Dense dense_layer = Dense::from_parameters(weight, bias, true);
 
-  Tensor<__nv_bfloat16> actual_out = dense_layer(input);
+  ScratchPad scratchpad;
+  Tensor<__nv_bfloat16> actual_out = dense_layer(input, scratchpad);
 
   assert_tensors_equal(actual_out, expected_out);
 }
@@ -84,11 +86,12 @@ TEST(LayerTest, DenseCache) {
 
   Dense dense_layer = Dense::from_parameters(weight, bias, false, 4);
 
-  Tensor<__nv_bfloat16> actual_a = dense_layer(input_a);
+  ScratchPad scratchpad;
+  Tensor<__nv_bfloat16> actual_a = dense_layer(input_a, scratchpad);
   assert_tensors_equal(actual_a, expected_a);
   EXPECT_EQ(dense_layer.cached_batches(), expected_a.shape[0]);
 
-  Tensor<__nv_bfloat16> actual_cached = dense_layer(input_b);
+  Tensor<__nv_bfloat16> actual_cached = dense_layer(input_b, scratchpad);
   assert_tensors_equal(actual_cached, expected_cached);
   EXPECT_EQ(dense_layer.cached_batches(), expected_cached.shape[0]);
 }
@@ -103,7 +106,8 @@ TEST(LayerTest, RMSNorm) {
 
   RMSNorm norm_layer = RMSNorm::from_parameter(weight, epsilon);
 
-  Tensor<__nv_bfloat16> actual_out = norm_layer(input);
+  ScratchPad scratchpad;
+  Tensor<__nv_bfloat16> actual_out = norm_layer(input, scratchpad);
 
   assert_tensors_equal(actual_out, expected_out);
 }
@@ -149,10 +153,12 @@ TEST(LayerTest, Qwen2TransformerBlock) {
       input_norm_layer, attention_layer, post_attention_norm_layer,
       gate_proj_layer, up_proj_layer, down_proj_layer);
 
-  Tensor<__nv_bfloat16> actual_out = transformer_block(input, true);
+  ScratchPad scratchpad;
+  Tensor<__nv_bfloat16> actual_out = transformer_block(input, scratchpad);
   assert_tensors_near(actual_out, expected_out);
 
-  Tensor<__nv_bfloat16> actual_out_next = transformer_block(input_next, true);
+  Tensor<__nv_bfloat16> actual_out_next =
+      transformer_block(input_next, scratchpad);
   assert_tensors_near(actual_out_next, expected_out_next);
 }
 
@@ -175,7 +181,8 @@ TEST(LayerTest, Embedding) {
 
   Embedding embedding_layer = Embedding::from_parameter(embedding_table);
 
-  Tensor<__nv_bfloat16> actual_out = embedding_layer(input);
+  ScratchPad scratchpad;
+  Tensor<__nv_bfloat16> actual_out = embedding_layer(input, scratchpad);
 
   assert_tensors_equal(actual_out, expected_out);
 }
@@ -188,7 +195,8 @@ TEST(LayerTest, Sampler) {
 
   Sampler sampler(logits.shape[1]);
 
-  Tensor<int> actual_out = sampler(logits);
+  ScratchPad scratchpad;
+  Tensor<int> actual_out = sampler(logits, scratchpad);
 
   ASSERT_EQ(actual_out.dimensions, expected_out.dimensions);
   ASSERT_EQ(actual_out.shape[0], expected_out.shape[0]);
@@ -211,7 +219,8 @@ TEST(LayerTest, LmHeadDense) {
 
   LmHeadDense lm_head = LmHeadDense::from_parameters(weight);
 
-  Tensor<__nv_bfloat16> actual_out = lm_head(hidden);
+  ScratchPad scratchpad;
+  Tensor<__nv_bfloat16> actual_out = lm_head(hidden, scratchpad);
 
   assert_tensors_equal(actual_out, expected_out);
 }

@@ -15,10 +15,11 @@ Qwen2Model::Qwen2Model(
     const Embedding &embedding_layer,
     const std::vector<Qwen2TransformerBlock> &transformer_blocks,
     const RMSNorm &rmsnorm, const LmHeadDense &lm_head, const Sampler &sampler,
-    int eos_token)
+    std::size_t scratchpad_size, std::size_t iobuf_size, int eos_token)
     : _embedding_layer(embedding_layer),
       _transformer_blocks(transformer_blocks), _rmsnorm(rmsnorm),
-      _lm_head(lm_head), _sampler(sampler), _eos_token{eos_token},
+      _lm_head(lm_head), _sampler(sampler), _scratchpad(scratchpad_size),
+      _iobuf{std::make_unique<InOutBuffer>(iobuf_size)}, _eos_token{eos_token},
       _max_sequence_length{
           _transformer_blocks[0].attention_layer().max_sequence_length()} {
   assert(std::all_of(_transformer_blocks.begin(), _transformer_blocks.end(),
@@ -31,6 +32,7 @@ Qwen2Model::Qwen2Model(
 
 Qwen2Model Qwen2Model::from_parameters(
     const std::map<std::string, Tensor<__nv_bfloat16>> &weights,
+    std::size_t scratchpad_size, std::size_t iobuf_size,
     std::size_t max_sequence_length, int eos_token) {
   const auto embedding_weight = weights.at("model.embed_tokens.weight");
   const auto embedding_layer = Embedding::from_parameter(embedding_weight);
@@ -85,16 +87,15 @@ Qwen2Model Qwen2Model::from_parameters(
   const auto lm_head = LmHeadDense::from_parameters(embedding_weight);
   const auto sampler = Sampler(lm_head.out_features());
   return Qwen2Model(embedding_layer, transformer_blocks, rmsnorm, lm_head,
-                    sampler, eos_token);
+                    sampler, scratchpad_size, iobuf_size, eos_token);
 }
 
 GenerationResult Qwen2Model::generate(const std::vector<int> &user_prompt) {
   int next_token;
   const auto prev_cached_tokens = _cached_tokens;
-  auto model_input =
-      Tensor{.shape = {user_prompt.size()},
-             .dimensions = 1,
-             .storage = std::make_shared<Storage<int>>(user_prompt)};
+  auto model_input = Tensor{.shape = {user_prompt.size()},
+                            .dimensions = 1,
+                            .storage = _iobuf->make_input_storage(user_prompt)};
   GenerationResult result;
   auto &generated_tokens = result.tokens;
   const auto start = std::chrono::steady_clock::now();
@@ -110,13 +111,14 @@ GenerationResult Qwen2Model::generate(const std::vector<int> &user_prompt) {
     }
     _cached_tokens += model_input.elems();
 
-    const auto embedding_out = _embedding_layer(model_input);
+    const auto embedding_out =
+        _embedding_layer(model_input, _scratchpad, _iobuf);
     auto blocks_out = embedding_out;
     for (auto &block : _transformer_blocks)
-      blocks_out = block(blocks_out);
-    const auto rmsnorm_out = _rmsnorm(blocks_out);
-    const auto lm_head_out = _lm_head(rmsnorm_out);
-    const auto sampler_out = _sampler(lm_head_out);
+      blocks_out = block(blocks_out, _scratchpad, _iobuf);
+    const auto rmsnorm_out = _rmsnorm(blocks_out, _scratchpad, _iobuf);
+    const auto lm_head_out = _lm_head(rmsnorm_out, _scratchpad, _iobuf);
+    const auto sampler_out = _sampler(lm_head_out, _scratchpad, _iobuf);
 
     CHECK_CUDA(cudaMemcpy(&next_token, sampler_out.storage->data, sizeof(int),
                           cudaMemcpyDeviceToHost));
