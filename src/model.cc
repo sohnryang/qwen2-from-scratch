@@ -32,10 +32,12 @@ Qwen2Model::Qwen2Model(
 
 Qwen2Model Qwen2Model::from_parameters(
     const std::map<std::string, Tensor<__nv_bfloat16>> &weights,
-    std::size_t scratchpad_size, std::size_t iobuf_size,
     std::size_t max_sequence_length, int eos_token) {
   const auto embedding_weight = weights.at("model.embed_tokens.weight");
   const auto embedding_layer = Embedding::from_parameter(embedding_weight);
+  const auto iobuf_size = std::max(
+      max_sequence_length * embedding_layer.dimension() * sizeof(__nv_bfloat16),
+      max_sequence_length * sizeof(int));
 
   std::vector<Qwen2TransformerBlock> transformer_blocks;
   for (int i = 0; i < 28; i++) {
@@ -80,6 +82,10 @@ Qwen2Model Qwen2Model::from_parameters(
                                     post_attention_layernorm, gate_proj,
                                     up_proj, down_proj);
   }
+  const auto scratchpad_size =
+      2 * transformer_blocks[0].attention_layer().groups() *
+      transformer_blocks[0].attention_layer().kv_heads() * max_sequence_length *
+      max_sequence_length * sizeof(float);
 
   const auto rmsnorm_weight = weights.at("model.norm.weight");
   const auto rmsnorm = RMSNorm::from_parameter(rmsnorm_weight, 1e-6);

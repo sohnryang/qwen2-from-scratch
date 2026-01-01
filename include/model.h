@@ -44,7 +44,6 @@ public:
 
   static Qwen2Model
   from_parameters(const std::map<std::string, Tensor<__nv_bfloat16>> &weights,
-                  std::size_t scratchpad_size, std::size_t iobuf_size,
                   std::size_t max_sequence_length = 8192,
                   int eos_token = 151645);
 
