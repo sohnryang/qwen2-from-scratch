@@ -1,12 +1,93 @@
 #pragma once
 
+#include "cuda_utils.h"
 #include "tensor.h"
 
+#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <optional>
 
 #include <cuda_bf16.h>
+
+class ScratchPad {
+private:
+  void *_pool = nullptr;
+  std::size_t _size = 0;
+  std::size_t _used = 0;
+
+public:
+  ~ScratchPad();
+  ScratchPad() = default;
+  ScratchPad(const ScratchPad &) = delete;
+  ScratchPad(ScratchPad &&) noexcept;
+  ScratchPad &operator=(ScratchPad &&) noexcept;
+
+  explicit ScratchPad(std::size_t size);
+
+  void reset();
+
+  template <typename T>
+  std::shared_ptr<Storage<T>> make_storage(std::size_t elems,
+                                           std::size_t align = 256);
+};
+
+class ScratchPadScope {
+private:
+  ScratchPad &_scratchpad;
+
+public:
+  ~ScratchPadScope();
+  ScratchPadScope() = delete;
+  ScratchPadScope(const ScratchPadScope &) = default;
+  ScratchPadScope &operator=(const ScratchPadScope &) = delete;
+
+  ScratchPadScope(ScratchPad &scratchpad);
+};
+
+class InOutBuffer {
+private:
+  std::array<void *, 2> _inout;
+  std::size_t _size;
+
+public:
+  ~InOutBuffer();
+  InOutBuffer() = delete;
+  InOutBuffer(const InOutBuffer &) = delete;
+  InOutBuffer(InOutBuffer &&) noexcept;
+  InOutBuffer &operator=(InOutBuffer &&) noexcept;
+
+  explicit InOutBuffer(std::size_t size);
+
+  template <typename T>
+  std::shared_ptr<Storage<T>> make_input_storage(std::size_t elems) const {
+    assert(elems * sizeof(T) <= _size &&
+           "requested size should fit in preallocated space");
+    return std::make_shared<Storage<T>>((T *)_inout[0], elems);
+  }
+
+  template <typename T>
+  std::shared_ptr<Storage<T>>
+  make_input_storage(const std::vector<T> &host_data) {
+    auto input_storage = make_input_storage<T>(host_data.size());
+    CHECK_CUDA(cudaMemcpy(input_storage->data, host_data.data(),
+                          host_data.size() * sizeof(T),
+                          cudaMemcpyHostToDevice));
+    return input_storage;
+  }
+
+  template <typename T, typename U>
+  std::shared_ptr<Storage<T>> output_for(const Tensor<U> &input,
+                                         std::size_t elems) const {
+    assert((_inout[0] == input.storage->data ||
+            _inout[1] == input.storage->data) &&
+           "provided tensor should use inout buffer");
+    assert(elems * sizeof(T) <= _size &&
+           "requested size should fit in preallocated space");
+    return std::make_shared<Storage<T>>(
+        (T *)(input.storage->data == _inout[0] ? _inout[1] : _inout[0]), elems);
+  }
+};
 
 class Dense {
 private:
@@ -78,6 +159,8 @@ public:
                         const Dense &q_layer, const Dense &k_layer,
                         const Dense &v_layer, const Dense &o_layer);
 
+  std::size_t kv_heads() const { return _kv_heads; }
+  std::size_t groups() const { return _groups; }
   std::size_t max_sequence_length() const { return _max_sequence_length; }
   const Dense &q_layer() const { return _q_layer; }
   const Dense &k_layer() const { return _k_layer; }
