@@ -150,10 +150,9 @@ TEST(LayerTest, Qwen2TransformerBlock) {
   const auto head_dimension = k_layer.out_features() / num_kv_heads;
   const auto rope_basis = GroupedQueryAttention::make_rope_bases(
       max_sequence_length, head_dimension, encoding_base, ctx.stream());
-  GroupedQueryAttention attention_layer(num_kv_heads, groups,
-                                        max_sequence_length, encoding_base,
-                                        q_layer, k_layer, v_layer, o_layer,
-                                        rope_basis);
+  GroupedQueryAttention attention_layer(
+      num_kv_heads, groups, max_sequence_length, encoding_base, q_layer,
+      k_layer, v_layer, o_layer, rope_basis);
   Dense gate_proj_layer =
       Dense::from_parameters(tensors.at("gate_proj_weight"), true);
   Dense up_proj_layer =

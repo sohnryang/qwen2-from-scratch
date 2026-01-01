@@ -83,19 +83,17 @@ RMSNorm::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
 GroupedQueryAttention::RopeBasis
 GroupedQueryAttention::make_rope_bases(std::size_t max_sequence_length,
                                        std::size_t head_dimension,
-                                       int encoding_base,
-                                       cudaStream_t stream) {
+                                       int encoding_base, cudaStream_t stream) {
   assert(head_dimension % 2 == 0 && "rope head dimension should be even");
   const auto half_dimension = head_dimension / 2;
-  Tensor<float> cos_basis = {
-      .shape = {max_sequence_length, half_dimension},
-      .dimensions = 2,
-      .storage = std::make_shared<Storage<float>>(max_sequence_length *
-                                                  half_dimension)};
-  Tensor<float> sin_basis = {.shape = cos_basis.shape,
+  Tensor<float> cos_basis = {.shape = {max_sequence_length, half_dimension},
                              .dimensions = 2,
                              .storage = std::make_shared<Storage<float>>(
-                                 cos_basis.elems())};
+                                 max_sequence_length * half_dimension)};
+  Tensor<float> sin_basis = {
+      .shape = cos_basis.shape,
+      .dimensions = 2,
+      .storage = std::make_shared<Storage<float>>(cos_basis.elems())};
 
   const dim3 threads_per_block(1024);
   const dim3 num_blocks(
