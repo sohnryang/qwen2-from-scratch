@@ -1,3 +1,4 @@
+#include "cuda_utils.h"
 #include "layer.h"
 #include "tensor.h"
 
@@ -55,6 +56,7 @@ TEST(LayerTest, DenseNoActivation) {
   LayerContext ctx(1);
   Tensor<__nv_bfloat16> actual_out = dense_layer(ctx, input);
 
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_equal(actual_out, expected_out);
 }
 
@@ -71,6 +73,7 @@ TEST(LayerTest, DenseWithActivation) {
   LayerContext ctx(1);
   Tensor<__nv_bfloat16> actual_out = dense_layer(ctx, input);
 
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_equal(actual_out, expected_out);
 }
 
@@ -88,10 +91,12 @@ TEST(LayerTest, DenseCache) {
 
   LayerContext ctx(1);
   Tensor<__nv_bfloat16> actual_a = dense_layer(ctx, input_a);
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_equal(actual_a, expected_a);
   EXPECT_EQ(dense_layer.cached_batches(), expected_a.shape[0]);
 
   Tensor<__nv_bfloat16> actual_cached = dense_layer(ctx, input_b);
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_equal(actual_cached, expected_cached);
   EXPECT_EQ(dense_layer.cached_batches(), expected_cached.shape[0]);
 }
@@ -109,6 +114,7 @@ TEST(LayerTest, RMSNorm) {
   LayerContext ctx(1);
   Tensor<__nv_bfloat16> actual_out = norm_layer(ctx, input);
 
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_equal(actual_out, expected_out);
 }
 
@@ -133,6 +139,7 @@ TEST(LayerTest, Qwen2TransformerBlock) {
   const std::size_t groups = 6; // 12 heads / 2 kv_heads
   const int encoding_base = 1000000;
 
+  LayerContext ctx(1);
   Dense q_layer = Dense::from_parameters(tensors.at("q_weight"),
                                          tensors.at("q_bias"), false);
   Dense k_layer = Dense::from_parameters(
@@ -140,9 +147,13 @@ TEST(LayerTest, Qwen2TransformerBlock) {
   Dense v_layer = Dense::from_parameters(
       tensors.at("v_weight"), tensors.at("v_bias"), false, max_sequence_length);
   Dense o_layer = Dense::from_parameters(tensors.at("o_weight"), false);
+  const auto head_dimension = k_layer.out_features() / num_kv_heads;
+  const auto rope_basis = GroupedQueryAttention::make_rope_bases(
+      max_sequence_length, head_dimension, encoding_base, ctx.stream());
   GroupedQueryAttention attention_layer(num_kv_heads, groups,
                                         max_sequence_length, encoding_base,
-                                        q_layer, k_layer, v_layer, o_layer);
+                                        q_layer, k_layer, v_layer, o_layer,
+                                        rope_basis);
   Dense gate_proj_layer =
       Dense::from_parameters(tensors.at("gate_proj_weight"), true);
   Dense up_proj_layer =
@@ -153,11 +164,12 @@ TEST(LayerTest, Qwen2TransformerBlock) {
       input_norm_layer, attention_layer, post_attention_norm_layer,
       gate_proj_layer, up_proj_layer, down_proj_layer);
 
-  LayerContext ctx(1);
   Tensor<__nv_bfloat16> actual_out = transformer_block(ctx, input);
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_near(actual_out, expected_out);
 
   Tensor<__nv_bfloat16> actual_out_next = transformer_block(ctx, input_next);
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_near(actual_out_next, expected_out_next);
 }
 
@@ -183,6 +195,7 @@ TEST(LayerTest, Embedding) {
   LayerContext ctx(1);
   Tensor<__nv_bfloat16> actual_out = embedding_layer(ctx, input);
 
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_equal(actual_out, expected_out);
 }
 
@@ -197,6 +210,7 @@ TEST(LayerTest, Sampler) {
   LayerContext ctx(1);
   Tensor<int> actual_out = sampler(ctx, logits);
 
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   ASSERT_EQ(actual_out.dimensions, expected_out.dimensions);
   ASSERT_EQ(actual_out.shape[0], expected_out.shape[0]);
   auto actual_host = actual_out.storage->to_host();
@@ -221,5 +235,6 @@ TEST(LayerTest, LmHeadDense) {
   LayerContext ctx(1);
   Tensor<__nv_bfloat16> actual_out = lm_head(ctx, hidden);
 
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
   assert_tensors_equal(actual_out, expected_out);
 }

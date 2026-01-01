@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
@@ -164,6 +165,9 @@ public:
 };
 
 class GroupedQueryAttention {
+public:
+  using RopeBasis = std::pair<Tensor<float>, Tensor<float>>;
+
 private:
   std::size_t _kv_heads;
   std::size_t _groups;
@@ -177,10 +181,16 @@ private:
   Tensor<float> _sin_basis;
 
 public:
+  static RopeBasis make_rope_bases(std::size_t max_sequence_length,
+                                   std::size_t head_dimension,
+                                   int encoding_base,
+                                   cudaStream_t stream = nullptr);
+
   GroupedQueryAttention(std::size_t kv_heads, std::size_t groups,
                         std::size_t max_sequence_length, int encoding_base,
                         const Dense &q_layer, const Dense &k_layer,
-                        const Dense &v_layer, const Dense &o_layer);
+                        const Dense &v_layer, const Dense &o_layer,
+                        const RopeBasis &rope_basis);
 
   std::size_t kv_heads() const { return _kv_heads; }
   std::size_t groups() const { return _groups; }

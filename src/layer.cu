@@ -33,12 +33,12 @@ Dense::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
     _cached_batches += batches;
 
   if (_use_activation)
-    dense<<<num_blocks, threads_per_block>>>(
+    dense<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         out_storage->data + out_offset, input.storage->data,
         _weight.storage->data, _bias ? _bias->storage->data : nullptr, batches,
         _in_features, _out_features);
   else
-    gemm_transposed<<<num_blocks, threads_per_block>>>(
+    gemm_transposed<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         out_storage->data + out_offset, input.storage->data,
         _weight.storage->data, _bias ? _bias->storage->data : nullptr, 1.0f,
         batches, _out_features, _in_features);
@@ -71,7 +71,7 @@ RMSNorm::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
     out_storage = iobuf->output_for<__nv_bfloat16>(input, input.elems());
   else
     out_storage = scratchpad.make_storage<__nv_bfloat16>(input.elems());
-  rmsnorm<<<num_blocks, threads_per_block>>>(
+  rmsnorm<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
       out_storage->data, input.storage->data, _weight.storage->data, batches,
       _dimensions, _epsilon);
 
@@ -80,24 +80,41 @@ RMSNorm::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
           .storage = out_storage};
 }
 
+GroupedQueryAttention::RopeBasis
+GroupedQueryAttention::make_rope_bases(std::size_t max_sequence_length,
+                                       std::size_t head_dimension,
+                                       int encoding_base,
+                                       cudaStream_t stream) {
+  assert(head_dimension % 2 == 0 && "rope head dimension should be even");
+  const auto half_dimension = head_dimension / 2;
+  Tensor<float> cos_basis = {
+      .shape = {max_sequence_length, half_dimension},
+      .dimensions = 2,
+      .storage = std::make_shared<Storage<float>>(max_sequence_length *
+                                                  half_dimension)};
+  Tensor<float> sin_basis = {.shape = cos_basis.shape,
+                             .dimensions = 2,
+                             .storage = std::make_shared<Storage<float>>(
+                                 cos_basis.elems())};
+
+  const dim3 threads_per_block(1024);
+  const dim3 num_blocks(
+      ceil_div(max_sequence_length * half_dimension, threads_per_block.x));
+  precompute_rope_bases<<<num_blocks, threads_per_block, 0, stream>>>(
+      cos_basis.storage->data, sin_basis.storage->data, encoding_base,
+      max_sequence_length, half_dimension);
+  return {cos_basis, sin_basis};
+}
+
 GroupedQueryAttention::GroupedQueryAttention(
     std::size_t kv_heads, std::size_t groups, std::size_t max_sequence_length,
     int encoding_base, const Dense &q_layer, const Dense &k_layer,
-    const Dense &v_layer, const Dense &o_layer)
+    const Dense &v_layer, const Dense &o_layer, const RopeBasis &rope_basis)
     : _kv_heads{kv_heads}, _groups{groups},
       _max_sequence_length{max_sequence_length}, _encoding_base{encoding_base},
       _q_layer(q_layer), _k_layer(k_layer), _v_layer(v_layer),
-      _o_layer(o_layer),
-      _cos_basis({.shape = {_max_sequence_length,
-                            _k_layer.out_features() / _kv_heads / 2},
-                  .dimensions = 2,
-                  .storage = std::make_shared<Storage<float>>(
-                      _max_sequence_length * _k_layer.out_features() /
-                      _kv_heads / 2)}),
-      _sin_basis(
-          {.shape = _cos_basis.shape,
-           .dimensions = 2,
-           .storage = std::make_shared<Storage<float>>(_cos_basis.elems())}) {
+      _o_layer(o_layer), _cos_basis(rope_basis.first),
+      _sin_basis(rope_basis.second) {
   assert(_k_layer.out_features() == _v_layer.out_features() &&
          "K and V dimensions mismatch");
   assert(_q_layer.out_features() % _k_layer.out_features() == 0 &&
@@ -106,14 +123,14 @@ GroupedQueryAttention::GroupedQueryAttention(
          "KV layer output dimension should be multiple of KV heads");
   assert(_q_layer.out_features() % (kv_heads * groups) == 0 &&
          "Q layer output dimension should be multiple of Q heads");
-
-  const auto half_dimension = _k_layer.out_features() / _kv_heads / 2;
-  const dim3 threads_per_block(1024);
-  const dim3 num_blocks(
-      ceil_div(_max_sequence_length * half_dimension, threads_per_block.x));
-  precompute_rope_bases<<<num_blocks, threads_per_block>>>(
-      _cos_basis.storage->data, _sin_basis.storage->data, _encoding_base,
-      _max_sequence_length, half_dimension);
+  assert(_cos_basis.dimensions == 2 && _sin_basis.dimensions == 2 &&
+         "rope basis should be 2D");
+  assert(_cos_basis.shape == _sin_basis.shape &&
+         "rope basis shape should match");
+  assert(_cos_basis.shape[0] == _max_sequence_length &&
+         "rope basis sequence length mismatch");
+  assert(_cos_basis.shape[1] == _k_layer.out_features() / _kv_heads / 2 &&
+         "rope basis head dimension mismatch");
 }
 
 Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
@@ -141,7 +158,7 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   const dim3 threads_per_block(1024);
   {
     const dim3 num_blocks(ceil_div(q_proj.elems() / 2, threads_per_block.x));
-    rope<<<num_blocks, threads_per_block>>>(
+    rope<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         q_proj.storage->data, q_proj.storage->data, _cos_basis.storage->data,
         _sin_basis.storage->data, cached_tokens, sequence_length_q,
         _kv_heads * _groups, dimension / 2);
@@ -154,7 +171,7 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
     const dim3 num_blocks(
         ceil_div((k_proj.elems() - cached_tokens * _k_layer.out_features()) / 2,
                  threads_per_block.x));
-    rope<<<num_blocks, threads_per_block>>>(
+    rope<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         k_proj.storage->data + cached_tokens * _k_layer.out_features(),
         k_proj.storage->data + cached_tokens * _k_layer.out_features(),
         _cos_basis.storage->data, _sin_basis.storage->data, cached_tokens,
@@ -173,12 +190,14 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   {
     const dim3 num_blocks(ceil_div(scores_elems, threads_per_block.x));
     if (causal_mask)
-      grouped_query_attention_scores_masked<<<num_blocks, threads_per_block>>>(
+      grouped_query_attention_scores_masked<<<num_blocks, threads_per_block, 0,
+                                              ctx.stream()>>>(
           scores_out_storage->data, q_proj_rope.storage->data,
           k_proj_rope.storage->data, sequence_length_q, sequence_length_kv,
           dimension, _kv_heads, _groups);
     else
-      grouped_query_attention_scores<<<num_blocks, threads_per_block>>>(
+      grouped_query_attention_scores<<<num_blocks, threads_per_block, 0,
+                                       ctx.stream()>>>(
           scores_out_storage->data, q_proj_rope.storage->data,
           k_proj_rope.storage->data, sequence_length_q, sequence_length_kv,
           dimension, _kv_heads, _groups);
@@ -186,7 +205,7 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
   {
     const dim3 num_blocks(
         ceil_div(scores_elems / sequence_length_kv, threads_per_block.x));
-    softmax<<<num_blocks, threads_per_block>>>(
+    softmax<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         scores_out_storage->data, scores_out_storage->data,
         scores_elems / sequence_length_kv, sequence_length_kv);
   }
@@ -196,7 +215,8 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
       scratchpad.make_storage<__nv_bfloat16>(attention_elems);
   {
     const dim3 num_blocks(ceil_div(attention_elems, 1024));
-    grouped_query_attention_output<<<num_blocks, threads_per_block>>>(
+    grouped_query_attention_output<<<num_blocks, threads_per_block, 0,
+                                     ctx.stream()>>>(
         attention_out_storage->data, scores_out_storage->data,
         v_proj.storage->data, sequence_length_q, sequence_length_kv, dimension,
         _kv_heads, _groups);
@@ -226,7 +246,7 @@ Qwen2TransformerBlock::operator()(LayerContext &ctx,
   {
     const dim3 num_blocks(
         ceil_div(attention_output.elems(), threads_per_block.x));
-    elementwise_add<<<num_blocks, threads_per_block>>>(
+    elementwise_add<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         attention_output.storage->data, attention_output.storage->data,
         input.storage->data, attention_output.elems());
   }
@@ -240,7 +260,7 @@ Qwen2TransformerBlock::operator()(LayerContext &ctx,
   {
     const dim3 num_blocks(
         ceil_div(gate_proj_output.elems(), threads_per_block.x));
-    elementwise_product<<<num_blocks, threads_per_block>>>(
+    elementwise_product<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         gate_proj_output.storage->data, gate_proj_output.storage->data,
         up_proj_output.storage->data, 1.0f, gate_proj_output.elems());
   }
@@ -257,7 +277,7 @@ Qwen2TransformerBlock::operator()(LayerContext &ctx,
   {
     const dim3 num_blocks(
         ceil_div(down_proj_output.elems(), threads_per_block.x));
-    elementwise_add<<<num_blocks, threads_per_block>>>(
+    elementwise_add<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         out_storage->data, down_proj_output.storage->data,
         attention_output.storage->data, down_proj_output.elems());
   }
@@ -280,7 +300,7 @@ Embedding::operator()(LayerContext &ctx, const Tensor<int> &input,
   else
     out_storage =
         scratchpad.make_storage<__nv_bfloat16>(sequence_length * _dimension);
-  lookup_embeddings<<<num_blocks, threads_per_block>>>(
+  lookup_embeddings<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
       out_storage->data, input.storage->data, _embedding_table.storage->data,
       sequence_length, _dimension);
 
@@ -312,9 +332,9 @@ Tensor<int> Sampler::operator()(LayerContext &ctx,
   auto current_vals = _vals_storage;
   auto current_indices = _indices_storage;
   const auto shared_bytes = threads_per_block * (sizeof(float) + sizeof(int));
-  argmax_first<<<dim3(blocks, batches), threads_per_block, shared_bytes>>>(
-      logits.storage->data, current_vals->data, current_indices->data,
-      _vocab_size);
+  argmax_first<<<dim3(blocks, batches), threads_per_block, shared_bytes,
+                 ctx.stream()>>>(logits.storage->data, current_vals->data,
+                                 current_indices->data, _vocab_size);
 
   while (blocks > 1) {
     const auto next_blocks = ceil_div(blocks, threads_per_block);
@@ -328,8 +348,8 @@ Tensor<int> Sampler::operator()(LayerContext &ctx,
           next_blocks * static_cast<std::size_t>(batches));
     auto next_vals = _vals_storage_next;
     auto next_indices = _indices_storage_next;
-    argmax_reduce<<<dim3(next_blocks, batches), threads_per_block,
-                    shared_bytes>>>(current_vals->data, current_indices->data,
+    argmax_reduce<<<dim3(next_blocks, batches), threads_per_block, shared_bytes,
+                    ctx.stream()>>>(current_vals->data, current_indices->data,
                                     next_vals->data, next_indices->data,
                                     blocks);
     blocks = next_blocks;
@@ -369,7 +389,7 @@ LmHeadDense::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
     out_storage = iobuf->output_for<__nv_bfloat16>(input, _out_features);
   else
     out_storage = scratchpad.make_storage<__nv_bfloat16>(_out_features);
-  gemm_transposed<<<num_blocks, threads_per_block>>>(
+  gemm_transposed<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
       out_storage->data, last_token, _weight.storage->data, nullptr, 1.0f, 1,
       _out_features, _in_features);
   return {.shape = {_out_features}, .dimensions = 1, .storage = out_storage};

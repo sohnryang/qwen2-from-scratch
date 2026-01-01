@@ -39,6 +39,14 @@ Qwen2Model Qwen2Model::from_parameters(
       max_sequence_length * embedding_layer.dimension() * sizeof(__nv_bfloat16),
       max_sequence_length * sizeof(int));
 
+  const std::size_t num_kv_heads = 2;
+  const std::size_t groups = 6;
+  const int encoding_base = 1000000;
+  const auto k_weight0 = weights.at("model.layers.0.self_attn.k_proj.weight");
+  const auto head_dimension = k_weight0.shape[0] / num_kv_heads;
+  const auto rope_basis = GroupedQueryAttention::make_rope_bases(
+      max_sequence_length, head_dimension, encoding_base);
+
   std::vector<Qwen2TransformerBlock> transformer_blocks;
   for (int i = 0; i < 28; i++) {
     const auto key_prefix = std::format("model.layers.{}", i);
@@ -67,7 +75,8 @@ Qwen2Model Qwen2Model::from_parameters(
     const auto post_attention_layernorm =
         RMSNorm::from_parameter(post_attention_layernorm_weight, 1e-6);
     const auto attention_layer = GroupedQueryAttention(
-        2, 6, max_sequence_length, 1000000, q_layer, k_layer, v_layer, o_layer);
+        num_kv_heads, groups, max_sequence_length, encoding_base, q_layer,
+        k_layer, v_layer, o_layer, rope_basis);
 
     const auto gate_proj_weight =
         weights.at(key_prefix + ".mlp.gate_proj.weight");
@@ -126,6 +135,7 @@ GenerationResult Qwen2Model::generate(const std::vector<int> &user_prompt) {
     const auto lm_head_out = _lm_head(_layer_ctx, rmsnorm_out, _iobuf);
     const auto sampler_out = _sampler(_layer_ctx, lm_head_out, _iobuf);
 
+    CHECK_CUDA(cudaStreamSynchronize(_layer_ctx.stream()));
     CHECK_CUDA(cudaMemcpy(&next_token, sampler_out.storage->data, sizeof(int),
                           cudaMemcpyDeviceToHost));
     generated_tokens.push_back(next_token);
