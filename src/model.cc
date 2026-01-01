@@ -18,7 +18,7 @@ Qwen2Model::Qwen2Model(
     std::size_t scratchpad_size, std::size_t iobuf_size, int eos_token)
     : _embedding_layer(embedding_layer),
       _transformer_blocks(transformer_blocks), _rmsnorm(rmsnorm),
-      _lm_head(lm_head), _sampler(sampler), _scratchpad(scratchpad_size),
+      _lm_head(lm_head), _sampler(sampler), _layer_ctx(scratchpad_size),
       _iobuf{std::make_unique<InOutBuffer>(iobuf_size)}, _eos_token{eos_token},
       _max_sequence_length{
           _transformer_blocks[0].attention_layer().max_sequence_length()} {
@@ -118,13 +118,13 @@ GenerationResult Qwen2Model::generate(const std::vector<int> &user_prompt) {
     _cached_tokens += model_input.elems();
 
     const auto embedding_out =
-        _embedding_layer(model_input, _scratchpad, _iobuf);
+        _embedding_layer(_layer_ctx, model_input, _iobuf);
     auto blocks_out = embedding_out;
     for (auto &block : _transformer_blocks)
-      blocks_out = block(blocks_out, _scratchpad, _iobuf);
-    const auto rmsnorm_out = _rmsnorm(blocks_out, _scratchpad, _iobuf);
-    const auto lm_head_out = _lm_head(rmsnorm_out, _scratchpad, _iobuf);
-    const auto sampler_out = _sampler(lm_head_out, _scratchpad, _iobuf);
+      blocks_out = block(_layer_ctx, blocks_out, _iobuf);
+    const auto rmsnorm_out = _rmsnorm(_layer_ctx, blocks_out, _iobuf);
+    const auto lm_head_out = _lm_head(_layer_ctx, rmsnorm_out, _iobuf);
+    const auto sampler_out = _sampler(_layer_ctx, lm_head_out, _iobuf);
 
     CHECK_CUDA(cudaMemcpy(&next_token, sampler_out.storage->data, sizeof(int),
                           cudaMemcpyDeviceToHost));

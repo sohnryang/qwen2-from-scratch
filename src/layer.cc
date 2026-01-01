@@ -56,6 +56,37 @@ ScratchPadScope::~ScratchPadScope() { _scratchpad.reset(); }
 ScratchPadScope::ScratchPadScope(ScratchPad &scratchpad)
     : _scratchpad{scratchpad} {}
 
+LayerContext::~LayerContext() {
+  if (_stream)
+    CHECK_CUDA(cudaStreamDestroy(_stream));
+  if (_last_token_index)
+    CHECK_CUDA(cudaFree(_last_token_index));
+}
+
+LayerContext::LayerContext(std::size_t scratchpad_size)
+    : _scratchpad{scratchpad_size} {
+  CHECK_CUDA(cudaStreamCreate(&_stream));
+  CHECK_CUDA(cudaMalloc(&_last_token_index, sizeof(int)));
+}
+
+LayerContext::LayerContext(LayerContext &&other) noexcept
+    : _scratchpad{std::move(other._scratchpad)},
+      _stream{std::exchange(other._stream, nullptr)},
+      _last_token_index{std::exchange(other._last_token_index, nullptr)} {}
+
+LayerContext &LayerContext::operator=(LayerContext &&other) noexcept {
+  if (this == &other)
+    return *this;
+  if (_stream)
+    CHECK_CUDA(cudaStreamDestroy(_stream));
+  if (_last_token_index)
+    CHECK_CUDA(cudaFree(_last_token_index));
+  _scratchpad = std::move(other._scratchpad);
+  _stream = std::exchange(other._stream, nullptr);
+  _last_token_index = std::exchange(other._last_token_index, nullptr);
+  return *this;
+}
+
 InOutBuffer::~InOutBuffer() {
   CHECK_CUDA(cudaFree(_inout[0]));
   CHECK_CUDA(cudaFree(_inout[1]));

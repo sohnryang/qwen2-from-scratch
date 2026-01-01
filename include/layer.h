@@ -9,6 +9,7 @@
 #include <optional>
 
 #include <cuda_bf16.h>
+#include <cuda_runtime.h>
 
 class ScratchPad {
 private:
@@ -43,6 +44,28 @@ public:
   ScratchPadScope &operator=(const ScratchPadScope &) = delete;
 
   ScratchPadScope(ScratchPad &scratchpad);
+};
+
+class LayerContext {
+private:
+  ScratchPad _scratchpad;
+  cudaStream_t _stream = nullptr;
+  int *_last_token_index = nullptr;
+
+public:
+  ~LayerContext();
+  LayerContext() = delete;
+  LayerContext(const LayerContext &) = delete;
+  LayerContext &operator=(const LayerContext &) = delete;
+  LayerContext(LayerContext &&other) noexcept;
+  LayerContext &operator=(LayerContext &&other) noexcept;
+
+  explicit LayerContext(std::size_t scratchpad_size);
+
+  ScratchPad &scratchpad() { return _scratchpad; }
+  const ScratchPad &scratchpad() const { return _scratchpad; }
+  cudaStream_t stream() const { return _stream; }
+  int *last_token_index() const { return _last_token_index; }
 };
 
 class InOutBuffer {
@@ -115,7 +138,7 @@ public:
                                bool use_activation, std::size_t cache_size = 0);
 
   Tensor<__nv_bfloat16>
-  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+  operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
              const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 
   void rollback(std::size_t previous_cached_batches);
@@ -136,7 +159,7 @@ public:
                                 float epsilon);
 
   Tensor<__nv_bfloat16>
-  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+  operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
              const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };
 
@@ -168,10 +191,9 @@ public:
   const Dense &o_layer() const { return _o_layer; }
 
   Tensor<__nv_bfloat16>
-  operator()(const Tensor<__nv_bfloat16> &input_q,
+  operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input_q,
              const Tensor<__nv_bfloat16> &input_k,
              const Tensor<__nv_bfloat16> &input_v, bool causal_mask,
-             ScratchPad &scratchpad,
              const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 
   void rollback(std::size_t previous_cached_batches);
@@ -200,7 +222,7 @@ public:
   }
 
   Tensor<__nv_bfloat16>
-  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+  operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
              const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 
   void rollback(std::size_t previous_cached_batches);
@@ -221,7 +243,7 @@ public:
   static Embedding from_parameter(const Tensor<__nv_bfloat16> &embedding_table);
 
   Tensor<__nv_bfloat16>
-  operator()(const Tensor<int> &input, ScratchPad &scratchpad,
+  operator()(LayerContext &ctx, const Tensor<int> &input,
              const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };
 
@@ -238,8 +260,7 @@ public:
 
   std::size_t vocab_size() const { return _vocab_size; }
 
-  Tensor<int> operator()(const Tensor<__nv_bfloat16> &logits,
-                         ScratchPad &scratchpad,
+  Tensor<int> operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &logits,
                          const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };
 
@@ -258,6 +279,6 @@ public:
   static LmHeadDense from_parameters(const Tensor<__nv_bfloat16> &weight);
 
   Tensor<__nv_bfloat16>
-  operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+  operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
              const std::unique_ptr<InOutBuffer> &iobuf = nullptr);
 };

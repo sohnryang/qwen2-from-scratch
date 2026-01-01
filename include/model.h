@@ -28,7 +28,7 @@ private:
   LmHeadDense _lm_head;
   Sampler _sampler;
 
-  ScratchPad _scratchpad;
+  LayerContext _layer_ctx;
   std::unique_ptr<InOutBuffer> _iobuf;
 
   const int _eos_token;

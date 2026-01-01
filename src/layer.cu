@@ -11,8 +11,9 @@
 #include <cuda_bf16.h>
 
 Tensor<__nv_bfloat16>
-Dense::operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+Dense::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
                   const std::unique_ptr<InOutBuffer> &iobuf) {
+  auto &scratchpad = ctx.scratchpad();
   assert(input.shape[input.dimensions - 1] == _in_features &&
          "invalid input dimension");
   const auto batches = input.elems() / _in_features;
@@ -54,8 +55,9 @@ Dense::operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
 }
 
 Tensor<__nv_bfloat16>
-RMSNorm::operator()(const Tensor<__nv_bfloat16> &input, ScratchPad &scratchpad,
+RMSNorm::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
                     const std::unique_ptr<InOutBuffer> &iobuf) {
+  auto &scratchpad = ctx.scratchpad();
   assert(input.shape[input.dimensions - 1] == _dimensions &&
          "invalid input dimension");
   const auto batches = input.elems() / _dimensions;
@@ -115,15 +117,16 @@ GroupedQueryAttention::GroupedQueryAttention(
 }
 
 Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
-    const Tensor<__nv_bfloat16> &input_q, const Tensor<__nv_bfloat16> &input_k,
-    const Tensor<__nv_bfloat16> &input_v, bool causal_mask,
-    ScratchPad &scratchpad, const std::unique_ptr<InOutBuffer> &iobuf) {
+    LayerContext &ctx, const Tensor<__nv_bfloat16> &input_q,
+    const Tensor<__nv_bfloat16> &input_k, const Tensor<__nv_bfloat16> &input_v,
+    bool causal_mask, const std::unique_ptr<InOutBuffer> &iobuf) {
+  auto &scratchpad = ctx.scratchpad();
   assert(_k_layer.cached_batches() == _v_layer.cached_batches() &&
          "K and V caches should hold equal number of tokens");
   const auto cached_tokens = _k_layer.cached_batches();
-  const auto q_proj = _q_layer(input_q, scratchpad, iobuf);
-  const auto k_proj = _k_layer(input_k, scratchpad);
-  const auto v_proj = _v_layer(input_v, scratchpad);
+  const auto q_proj = _q_layer(ctx, input_q, iobuf);
+  const auto k_proj = _k_layer(ctx, input_k);
+  const auto v_proj = _v_layer(ctx, input_v);
 
   assert(q_proj.dimensions == k_proj.dimensions &&
          k_proj.dimensions == v_proj.dimensions &&
@@ -199,24 +202,24 @@ Tensor<__nv_bfloat16> GroupedQueryAttention::operator()(
         _kv_heads, _groups);
   }
   const auto o_proj = _o_layer(
-      Tensor{.shape = {attention_elems},
-             .dimensions = 1,
-             .storage = attention_out_storage}
-          .reshape({static_cast<int>(sequence_length_q),
-                    static_cast<int>(_kv_heads * _groups * dimension)}),
-      scratchpad);
+      ctx, Tensor{.shape = {attention_elems},
+                  .dimensions = 1,
+                  .storage = attention_out_storage}
+               .reshape({static_cast<int>(sequence_length_q),
+                         static_cast<int>(_kv_heads * _groups * dimension)}));
   return o_proj;
 }
 
 Tensor<__nv_bfloat16>
-Qwen2TransformerBlock::operator()(const Tensor<__nv_bfloat16> &input,
-                                  ScratchPad &scratchpad,
+Qwen2TransformerBlock::operator()(LayerContext &ctx,
+                                  const Tensor<__nv_bfloat16> &input,
                                   const std::unique_ptr<InOutBuffer> &iobuf) {
+  auto &scratchpad = ctx.scratchpad();
   ScratchPadScope scope{scratchpad};
 
-  const auto input_normalized = _input_norm_layer(input, scratchpad);
+  const auto input_normalized = _input_norm_layer(ctx, input);
   const auto attention_output = _attention_layer(
-      input_normalized, input_normalized, input_normalized, true, scratchpad);
+      ctx, input_normalized, input_normalized, input_normalized, true);
   assert(input.shape == attention_output.shape &&
          "input and attention output shape should match");
   const dim3 threads_per_block(1024);
@@ -228,11 +231,10 @@ Qwen2TransformerBlock::operator()(const Tensor<__nv_bfloat16> &input,
         input.storage->data, attention_output.elems());
   }
   const auto attention_output_normalized =
-      _post_attention_norm_layer(attention_output, scratchpad);
+      _post_attention_norm_layer(ctx, attention_output);
   const auto gate_proj_output =
-      _gate_proj_layer(attention_output_normalized, scratchpad);
-  const auto up_proj_output =
-      _up_proj_layer(attention_output_normalized, scratchpad);
+      _gate_proj_layer(ctx, attention_output_normalized);
+  const auto up_proj_output = _up_proj_layer(ctx, attention_output_normalized);
   assert(gate_proj_output.shape == up_proj_output.shape &&
          "gate and up projection shape should match");
   {
@@ -242,7 +244,7 @@ Qwen2TransformerBlock::operator()(const Tensor<__nv_bfloat16> &input,
         gate_proj_output.storage->data, gate_proj_output.storage->data,
         up_proj_output.storage->data, 1.0f, gate_proj_output.elems());
   }
-  const auto down_proj_output = _down_proj_layer(gate_proj_output, scratchpad);
+  const auto down_proj_output = _down_proj_layer(ctx, gate_proj_output);
   assert(down_proj_output.shape == attention_output.shape &&
          "down projection and attention output shape should match");
   std::shared_ptr<Storage<__nv_bfloat16>> out_storage;
@@ -265,8 +267,9 @@ Qwen2TransformerBlock::operator()(const Tensor<__nv_bfloat16> &input,
 }
 
 Tensor<__nv_bfloat16>
-Embedding::operator()(const Tensor<int> &input, ScratchPad &scratchpad,
+Embedding::operator()(LayerContext &ctx, const Tensor<int> &input,
                       const std::unique_ptr<InOutBuffer> &iobuf) {
+  auto &scratchpad = ctx.scratchpad();
   const auto sequence_length = input.elems();
   const dim3 threads_per_block(1024);
   const dim3 num_blocks(ceil_div(input.elems(), threads_per_block.x));
@@ -288,9 +291,10 @@ Embedding::operator()(const Tensor<int> &input, ScratchPad &scratchpad,
           .storage = out_storage};
 }
 
-Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits,
-                                ScratchPad &scratchpad,
+Tensor<int> Sampler::operator()(LayerContext &ctx,
+                                const Tensor<__nv_bfloat16> &logits,
                                 const std::unique_ptr<InOutBuffer> &iobuf) {
+  auto &scratchpad = ctx.scratchpad();
   assert(logits.shape[logits.dimensions - 1] == _vocab_size &&
          "vocab dimension should match sampler");
 
@@ -346,9 +350,9 @@ Tensor<int> Sampler::operator()(const Tensor<__nv_bfloat16> &logits,
 }
 
 Tensor<__nv_bfloat16>
-LmHeadDense::operator()(const Tensor<__nv_bfloat16> &input,
-                        ScratchPad &scratchpad,
+LmHeadDense::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
                         const std::unique_ptr<InOutBuffer> &iobuf) {
+  auto &scratchpad = ctx.scratchpad();
   assert(input.dimensions >= 1 && "input should have at least 1 dimension");
   const auto last_dim = input.shape[input.dimensions - 1];
   assert(last_dim == _in_features && "invalid input dimension");
