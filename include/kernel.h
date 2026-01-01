@@ -102,3 +102,6 @@ __global__ void rmsnorm(__nv_bfloat16 *__restrict__ out,
                         const __nv_bfloat16 *__restrict__ x,
                         const __nv_bfloat16 *__restrict__ weight,
                         std::size_t batches, std::size_t n, __nv_bfloat16 eps);
+
+__global__ void step(int *last_token_index, int *is_stopped,
+                     std::size_t max_sequence_length);

@@ -475,3 +475,14 @@ __global__ void rmsnorm(__nv_bfloat16 *__restrict__ out,
     out[n * batch + i] = __float2bfloat16(__bfloat162float(x[n * batch + i]) *
                                           factor * __bfloat162float(weight[i]));
 }
+
+__global__ void step(int *last_token_index, int *is_stopped,
+                     std::size_t max_sequence_length) {
+  if (blockIdx.x != 0 || threadIdx.x != 0)
+    return;
+  if (atomicAdd(is_stopped, 0) == 1)
+    return;
+  const int next_index = atomicAdd(last_token_index, 1) + 1;
+  if (next_index >= static_cast<int>(max_sequence_length))
+    atomicExch(is_stopped, 1);
+}
