@@ -59,31 +59,31 @@ ScratchPadScope::ScratchPadScope(ScratchPad &scratchpad)
 LayerContext::~LayerContext() {
   if (_stream)
     CHECK_CUDA(cudaStreamDestroy(_stream));
-  if (_generation_step)
-    CHECK_CUDA(cudaFree(_generation_step));
+  if (_last_token_index)
+    CHECK_CUDA(cudaFree(_last_token_index));
 }
 
 LayerContext::LayerContext(std::size_t scratchpad_size)
     : _scratchpad{scratchpad_size} {
   CHECK_CUDA(cudaStreamCreate(&_stream));
-  CHECK_CUDA(cudaMalloc(&_generation_step, sizeof(Step)));
+  CHECK_CUDA(cudaMalloc(&_last_token_index, sizeof(int)));
 }
 
 LayerContext::LayerContext(LayerContext &&other) noexcept
     : _scratchpad{std::move(other._scratchpad)},
       _stream{std::exchange(other._stream, nullptr)},
-      _generation_step{std::exchange(other._generation_step, nullptr)} {}
+      _last_token_index{std::exchange(other._last_token_index, nullptr)} {}
 
 LayerContext &LayerContext::operator=(LayerContext &&other) noexcept {
   if (this == &other)
     return *this;
   if (_stream)
     CHECK_CUDA(cudaStreamDestroy(_stream));
-  if (_generation_step)
-    CHECK_CUDA(cudaFree(_generation_step));
+  if (_last_token_index)
+    CHECK_CUDA(cudaFree(_last_token_index));
   _scratchpad = std::move(other._scratchpad);
   _stream = std::exchange(other._stream, nullptr);
-  _generation_step = std::exchange(other._generation_step, nullptr);
+  _last_token_index = std::exchange(other._last_token_index, nullptr);
   return *this;
 }
 

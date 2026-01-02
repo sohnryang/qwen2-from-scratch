@@ -47,16 +47,11 @@ public:
   ScratchPadScope(ScratchPad &scratchpad);
 };
 
-struct Step {
-  int last_token_index;
-  int is_stopped;
-};
-
 class LayerContext {
 private:
   ScratchPad _scratchpad;
   cudaStream_t _stream = nullptr;
-  Step *_generation_step = nullptr;
+  int *_last_token_index = nullptr;
 
 public:
   ~LayerContext();
@@ -71,7 +66,7 @@ public:
   ScratchPad &scratchpad() { return _scratchpad; }
   const ScratchPad &scratchpad() const { return _scratchpad; }
   cudaStream_t stream() const { return _stream; }
-  Step *generation_step() const { return _generation_step; }
+  int *last_token_index() const { return _last_token_index; }
 };
 
 class InOutBuffer {
