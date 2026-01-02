@@ -375,14 +375,11 @@ __global__ void argmax_first(const __nv_bfloat16 *__restrict__ logits,
                              float *__restrict__ block_max_vals,
                              int *__restrict__ block_max_indices,
                              std::size_t vocab_size) {
-  const auto batch = blockIdx.y;
   const auto block = blockIdx.x;
 
-  const auto global_offset = batch * vocab_size;
   const auto idx = block * blockDim.x + threadIdx.x;
-  const float val = idx < vocab_size
-                        ? __bfloat162float(logits[global_offset + idx])
-                        : -INFINITY;
+  const float val =
+      idx < vocab_size ? __bfloat162float(logits[idx]) : -INFINITY;
 
   extern __shared__ unsigned char shared_raw[];
   float *shared_max_val = reinterpret_cast<float *>(shared_raw);
@@ -407,9 +404,8 @@ __global__ void argmax_first(const __nv_bfloat16 *__restrict__ logits,
   }
 
   if (threadIdx.x == 0) {
-    const auto out_idx = batch * gridDim.x + block;
-    block_max_vals[out_idx] = shared_max_val[0];
-    block_max_indices[out_idx] = shared_max_idx[0];
+    block_max_vals[block] = shared_max_val[0];
+    block_max_indices[block] = shared_max_idx[0];
   }
 }
 
@@ -418,15 +414,13 @@ __global__ void argmax_reduce(const float *__restrict__ in_vals,
                               float *__restrict__ out_vals,
                               int *__restrict__ out_indices,
                               std::size_t blocks_in) {
-  const auto batch = blockIdx.y;
   const auto block = blockIdx.x;
 
-  const auto base = batch * blocks_in;
   const auto idx = block * blockDim.x + threadIdx.x;
 
   const bool valid = idx < blocks_in;
-  const float val = valid ? in_vals[base + idx] : -INFINITY;
-  const int id = valid ? in_indices[base + idx] : 0;
+  const float val = valid ? in_vals[idx] : -INFINITY;
+  const int id = valid ? in_indices[idx] : 0;
 
   extern __shared__ unsigned char shared_raw[];
   float *shared_max_val = reinterpret_cast<float *>(shared_raw);
@@ -451,9 +445,8 @@ __global__ void argmax_reduce(const float *__restrict__ in_vals,
   }
 
   if (threadIdx.x == 0) {
-    const auto out_idx = batch * gridDim.x + block;
-    out_vals[out_idx] = shared_max_val[0];
-    out_indices[out_idx] = shared_max_idx[0];
+    out_vals[block] = shared_max_val[0];
+    out_indices[block] = shared_max_idx[0];
   }
 }
 

@@ -316,37 +316,32 @@ Tensor<int> Sampler::operator()(LayerContext &ctx,
   assert(logits.shape[logits.dimensions - 1] == _vocab_size &&
          "vocab dimension should match sampler");
 
-  const auto batches = logits.dimensions > 1 ? logits.shape[0] : 1;
+  if (logits.dimensions > 1)
+    assert(logits.shape[0] == 1 && "sampler only supports batch size 1");
   const std::size_t threads_per_block = 1024;
   std::size_t blocks = ceil_div(_vocab_size, threads_per_block);
 
-  if (!_vals_storage || _vals_storage->elems < blocks * batches)
-    _vals_storage = std::make_shared<Storage<float>>(
-        blocks * static_cast<std::size_t>(batches));
-  if (!_indices_storage || _indices_storage->elems < blocks * batches)
-    _indices_storage = std::make_shared<Storage<int>>(
-        blocks * static_cast<std::size_t>(batches));
+  if (!_vals_storage || _vals_storage->elems < blocks)
+    _vals_storage = std::make_shared<Storage<float>>(blocks);
+  if (!_indices_storage || _indices_storage->elems < blocks)
+    _indices_storage = std::make_shared<Storage<int>>(blocks);
 
   auto current_vals = _vals_storage;
   auto current_indices = _indices_storage;
   const auto shared_bytes = threads_per_block * (sizeof(float) + sizeof(int));
-  argmax_first<<<dim3(blocks, batches), threads_per_block, shared_bytes,
-                 ctx.stream()>>>(logits.storage->data, current_vals->data,
-                                 current_indices->data, _vocab_size);
+  argmax_first<<<dim3(blocks), threads_per_block, shared_bytes, ctx.stream()>>>(
+      logits.storage->data, current_vals->data, current_indices->data,
+      _vocab_size);
 
   while (blocks > 1) {
     const auto next_blocks = ceil_div(blocks, threads_per_block);
-    if (!_vals_storage_next ||
-        _vals_storage_next->elems < next_blocks * batches)
-      _vals_storage_next = std::make_shared<Storage<float>>(
-          next_blocks * static_cast<std::size_t>(batches));
-    if (!_indices_storage_next ||
-        _indices_storage_next->elems < next_blocks * batches)
-      _indices_storage_next = std::make_shared<Storage<int>>(
-          next_blocks * static_cast<std::size_t>(batches));
+    if (!_vals_storage_next || _vals_storage_next->elems < next_blocks)
+      _vals_storage_next = std::make_shared<Storage<float>>(next_blocks);
+    if (!_indices_storage_next || _indices_storage_next->elems < next_blocks)
+      _indices_storage_next = std::make_shared<Storage<int>>(next_blocks);
     auto next_vals = _vals_storage_next;
     auto next_indices = _indices_storage_next;
-    argmax_reduce<<<dim3(next_blocks, batches), threads_per_block, shared_bytes,
+    argmax_reduce<<<dim3(next_blocks), threads_per_block, shared_bytes,
                     ctx.stream()>>>(current_vals->data, current_indices->data,
                                     next_vals->data, next_indices->data,
                                     blocks);
@@ -357,12 +352,13 @@ Tensor<int> Sampler::operator()(LayerContext &ctx,
 
   std::shared_ptr<Storage<int>> out_storage;
   if (iobuf)
-    out_storage = iobuf->output_for<int>(logits, batches);
+    out_storage = iobuf->output_for<int>(logits, 1);
   else
-    out_storage = scratchpad.make_storage<int>(batches);
-  CHECK_CUDA(cudaMemcpy(out_storage->data, current_indices->data,
-                        batches * sizeof(int), cudaMemcpyDeviceToDevice));
-  return {.shape = {static_cast<std::size_t>(batches)},
+    out_storage = scratchpad.make_storage<int>(1);
+  CHECK_CUDA(cudaMemcpyAsync(out_storage->data, current_indices->data,
+                             sizeof(int), cudaMemcpyDeviceToDevice,
+                             ctx.stream()));
+  return {.shape = {static_cast<std::size_t>(1)},
           .dimensions = 1,
           .storage = out_storage};
 }

@@ -219,13 +219,7 @@ def create_embedding_test_file(data_dir: str):
 
 
 def create_sampler_test_file(data_dir: str):
-    logits = torch.tensor(
-        [
-            [0.1, 0.2, 0.9, -0.5, -1.0],
-            [5.0, 3.0, -3.0, 4.0, 2.0],
-        ],
-        dtype=torch.bfloat16,
-    )
+    logits = torch.tensor([[0.1, 0.2, 0.9, -0.5, -1.0]], dtype=torch.bfloat16)
     expected = torch.argmax(logits, dim=-1).to(torch.bfloat16)
     save_file(
         {"logits": logits, "expected": expected},

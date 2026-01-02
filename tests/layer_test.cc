@@ -204,7 +204,10 @@ TEST(LayerTest, Sampler) {
   const auto &logits = tensors.at("logits");
   const auto &expected_out = tensors.at("expected");
 
-  Sampler sampler(logits.shape[1]);
+  if (logits.dimensions > 1)
+    ASSERT_EQ(logits.shape[0], 1U);
+
+  Sampler sampler(logits.shape[1], 1);
 
   LayerContext ctx(1);
   Tensor<int> actual_out = sampler(ctx, logits);
