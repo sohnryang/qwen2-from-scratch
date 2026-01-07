@@ -21,7 +21,7 @@ template <typename T> struct Storage {
   Storage(Storage &&) noexcept;
   Storage &operator=(Storage &&) noexcept;
 
-  explicit Storage(std::size_t elems_);
+  explicit Storage(std::size_t elems_, cudaStream_t stream = 0);
   Storage(const std::vector<T> &host_data);
   Storage(T *data_, std::size_t elems_);
 

@@ -37,9 +37,15 @@ Storage<T> &Storage<T>::operator=(Storage &&other) noexcept {
   return *this;
 }
 
-template <typename T> Storage<T>::Storage(std::size_t elems_) : elems{elems_} {
-  if (elems_)
-    CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(T)));
+template <typename T>
+Storage<T>::Storage(std::size_t elems_, cudaStream_t stream) : elems{elems_} {
+  if (elems_) {
+    if (stream) {
+      CHECK_CUDA(cudaMallocAsync((void **)&data, elems * sizeof(T), stream));
+      CHECK_CUDA(cudaStreamSynchronize(stream));
+    } else
+      CHECK_CUDA(cudaMalloc((void **)&data, elems * sizeof(T)));
+  }
 }
 
 template <typename T>
