@@ -89,11 +89,11 @@ GroupedQueryAttention::make_rope_bases(std::size_t max_sequence_length,
   Tensor<float> cos_basis = {.shape = {max_sequence_length, half_dimension},
                              .dimensions = 2,
                              .storage = std::make_shared<Storage<float>>(
-                                 max_sequence_length * half_dimension)};
+                                 max_sequence_length * half_dimension, stream)};
   Tensor<float> sin_basis = {
       .shape = cos_basis.shape,
       .dimensions = 2,
-      .storage = std::make_shared<Storage<float>>(cos_basis.elems())};
+      .storage = std::make_shared<Storage<float>>(cos_basis.elems(), stream)};
 
   const dim3 threads_per_block(1024);
   const dim3 num_blocks(
@@ -322,9 +322,9 @@ Tensor<int> Sampler::operator()(LayerContext &ctx,
   std::size_t blocks = ceil_div(_vocab_size, threads_per_block);
 
   if (!_vals_storage || _vals_storage->elems < blocks)
-    _vals_storage = std::make_shared<Storage<float>>(blocks);
+    _vals_storage = std::make_shared<Storage<float>>(blocks, ctx.stream());
   if (!_indices_storage || _indices_storage->elems < blocks)
-    _indices_storage = std::make_shared<Storage<int>>(blocks);
+    _indices_storage = std::make_shared<Storage<int>>(blocks, ctx.stream());
 
   auto current_vals = _vals_storage;
   auto current_indices = _indices_storage;
@@ -336,9 +336,11 @@ Tensor<int> Sampler::operator()(LayerContext &ctx,
   while (blocks > 1) {
     const auto next_blocks = ceil_div(blocks, threads_per_block);
     if (!_vals_storage_next || _vals_storage_next->elems < next_blocks)
-      _vals_storage_next = std::make_shared<Storage<float>>(next_blocks);
+      _vals_storage_next =
+          std::make_shared<Storage<float>>(next_blocks, ctx.stream());
     if (!_indices_storage_next || _indices_storage_next->elems < next_blocks)
-      _indices_storage_next = std::make_shared<Storage<int>>(next_blocks);
+      _indices_storage_next =
+          std::make_shared<Storage<int>>(next_blocks, ctx.stream());
     auto next_vals = _vals_storage_next;
     auto next_indices = _indices_storage_next;
     argmax_reduce<<<dim3(next_blocks), threads_per_block, shared_bytes,
