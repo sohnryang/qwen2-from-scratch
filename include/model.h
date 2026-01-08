@@ -4,9 +4,11 @@
 #include "tensor.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -15,6 +17,7 @@ class Qwen2Model {
 public:
   struct StreamResult {
     std::vector<int> tokens;
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>> timestamp;
     bool done;
     bool out_of_space;
   };

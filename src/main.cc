@@ -1,12 +1,15 @@
 #include "model.h"
 #include "tensor.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <ios>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -151,6 +154,9 @@ int main(int argc, char **argv) {
     user_prompt +=
         BOS + "user\n" + user_message + EOS + "\n" + BOS + "assistant\n";
     const auto tokenized_user_prompt = tokenizer->Encode(user_prompt);
+    const auto start_time = std::chrono::steady_clock::now();
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>>
+        first_token_timestamp;
     if (!model.append_prompt(tokenized_user_prompt)) {
       std::cout << "LLM: prompt too long, please try again." << std::endl;
       continue;
@@ -159,6 +165,7 @@ int main(int argc, char **argv) {
 
     Qwen2Model::StreamResult result;
     std::string partial_chars;
+    std::size_t generated_tokens = 0;
     std::cout << "LLM: ";
     do {
       result = model.stream_response();
@@ -168,11 +175,33 @@ int main(int argc, char **argv) {
       }
       if (result.tokens.empty())
         continue;
+      generated_tokens += result.tokens.size();
+      if (!first_token_timestamp)
+        first_token_timestamp =
+            result.timestamp.value_or(std::chrono::steady_clock::now());
       const auto decoded = partial_chars + tokenizer->Decode(result.tokens);
       const auto [complete, suffix] = split_partial_suffix(decoded);
       std::cout << complete << std::flush;
       partial_chars = suffix;
     } while (!result.done);
+    if (measure_timing) {
+      const auto end_time = std::chrono::steady_clock::now();
+      const auto ttfb_ms =
+          std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(
+              *first_token_timestamp - start_time)
+              .count();
+      const auto generation_s =
+          std::chrono::duration_cast<std::chrono::duration<double>>(end_time -
+                                                                    start_time)
+              .count();
+      const double tps =
+          generation_s > 0.0
+              ? static_cast<double>(generated_tokens) / generation_s
+              : 0.0;
+      std::cout << "\n[Timing] TTFT: " << std::fixed << std::setprecision(2)
+                << ttfb_ms << " ms, TPS: " << std::setprecision(2) << tps
+                << " (" << generated_tokens << " tokens)";
+    }
     std::cout << std::endl;
   }
   producer_thread.join();

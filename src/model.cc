@@ -175,6 +175,7 @@ Qwen2Model::StreamResult Qwen2Model::stream_response() {
   const auto streamed_tokens = _streamed_tokens.load(std::memory_order_acquire);
   int new_tokens = *_published_tokens_ptr - streamed_tokens;
   std::vector<int> tokens;
+  std::optional<std::chrono::time_point<std::chrono::steady_clock>> timestamp;
   auto done = false;
   auto out_of_space = false;
   if (new_tokens >= 0) {
@@ -184,6 +185,7 @@ Qwen2Model::StreamResult Qwen2Model::stream_response() {
         _sampler.generated_tokens()->data + streamed_tokens,
         new_tokens * sizeof(int), cudaMemcpyDeviceToHost, _copy_stream));
     CHECK_CUDA(cudaStreamSynchronize(_copy_stream));
+    timestamp = std::chrono::steady_clock::now();
     std::copy_n(_published_tokens_buf + streamed_tokens, new_tokens,
                 tokens.begin());
     const auto eos_it = std::find(tokens.begin(), tokens.end(), _eos_token);
@@ -203,5 +205,5 @@ Qwen2Model::StreamResult Qwen2Model::stream_response() {
   _published.store(false, std::memory_order_release);
   _publish_available.store(true, std::memory_order_release);
   _publish_available.notify_one();
-  return {tokens, done, out_of_space};
+  return {tokens, timestamp, done, out_of_space};
 }
