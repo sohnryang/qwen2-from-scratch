@@ -51,7 +51,7 @@ class LayerContext {
 private:
   ScratchPad _scratchpad;
   cudaStream_t _stream = nullptr;
-  int *_last_token_index = nullptr;
+  int *_valid_tokens_ptr = nullptr;
 
 public:
   ~LayerContext();
@@ -66,7 +66,9 @@ public:
   ScratchPad &scratchpad() { return _scratchpad; }
   const ScratchPad &scratchpad() const { return _scratchpad; }
   cudaStream_t stream() const { return _stream; }
-  int *last_token_index() const { return _last_token_index; }
+  int *valid_tokens_ptr() const { return _valid_tokens_ptr; }
+
+  void set_valid_tokens(int valid_tokens);
 };
 
 class InOutBuffer {
@@ -260,15 +262,20 @@ public:
 class Sampler {
 private:
   std::size_t _vocab_size;
+  std::size_t _max_sequence_length;
   std::shared_ptr<Storage<float>> _vals_storage;
   std::shared_ptr<Storage<float>> _vals_storage_next;
   std::shared_ptr<Storage<int>> _indices_storage;
   std::shared_ptr<Storage<int>> _indices_storage_next;
+  std::shared_ptr<Storage<int>> _generated_tokens;
 
 public:
-  explicit Sampler(std::size_t vocab_size);
+  explicit Sampler(std::size_t vocab_size, std::size_t max_sequence_length);
 
   std::size_t vocab_size() const { return _vocab_size; }
+  std::shared_ptr<Storage<int>> generated_tokens() const {
+    return _generated_tokens;
+  }
 
   Tensor<int> operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &logits,
                          const std::unique_ptr<InOutBuffer> &iobuf = nullptr);

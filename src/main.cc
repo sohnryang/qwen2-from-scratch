@@ -1,8 +1,6 @@
 #include "model.h"
 #include "tensor.h"
 
-#include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <fstream>
@@ -11,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <tokenizers_cpp.h>
 
@@ -43,6 +42,39 @@ load_tokenizer(const std::string &filename) {
                            tokenizer_file_size))
     throw std::runtime_error("failed to read tokenizer file");
   return tokenizers::Tokenizer::FromBlobJSON(tokenizer_blob);
+}
+
+static bool is_continuation(char c) { return (c & 0xC0) == 0x80; }
+
+static std::pair<std::string, std::string>
+split_partial_suffix(const std::string &input) {
+  std::size_t continuation_count = 0;
+  while (continuation_count < 3 && continuation_count < input.size() &&
+         is_continuation(input[input.size() - 1 - continuation_count]))
+    ++continuation_count;
+
+  if (continuation_count == 0)
+    return {input, ""};
+
+  const std::size_t suffix_start = input.size() - continuation_count;
+  if (suffix_start == 0)
+    return {"", input};
+
+  const auto lead = static_cast<unsigned char>(input[suffix_start - 1]);
+  std::size_t expected_len = 0;
+  if ((lead & 0x80) == 0x00)
+    expected_len = 1;
+  else if ((lead & 0xE0) == 0xC0)
+    expected_len = 2;
+  else if ((lead & 0xF0) == 0xE0)
+    expected_len = 3;
+  else if ((lead & 0xF8) == 0xF0)
+    expected_len = 4;
+
+  if (expected_len == continuation_count + 1)
+    return {input, ""};
+
+  return {input.substr(0, suffix_start), input.substr(suffix_start)};
 }
 
 int main(int argc, char **argv) {
@@ -104,76 +136,40 @@ int main(int argc, char **argv) {
   const std::string BOS = "<|im_start|>", EOS = "<|im_end|>";
   std::string system_prompt_with_template =
       BOS + "system\n" + system_prompt + EOS + "\n";
-  bool prefilled = false;
+  bool first_message = true;
 
-  if (benchmark_mode) {
-    std::string user_prompt = system_prompt_with_template + BOS + "user\n" +
-                              benchmark_prompt + EOS + "\n" + BOS +
-                              "assistant\n";
-    const auto tokenized_user_prompt = tokenizer->Encode(user_prompt);
-    auto generation = model.generate(tokenized_user_prompt);
-    auto &generated_tokens = generation.tokens;
-    if (generated_tokens.empty()) {
-      std::cout << "LLM: prompt too long, please try again." << std::endl;
-      return 1;
-    }
-    generated_tokens.pop_back();
-    const auto total_seconds =
-        std::chrono::duration_cast<std::chrono::duration<double>>(
-            generation.metrics.total_duration)
-            .count();
-    const auto ttft_seconds =
-        std::chrono::duration_cast<std::chrono::duration<double>>(
-            generation.metrics.time_to_first_token)
-            .count();
-    const auto token_count = generated_tokens.size() + 1;
-    const auto tps =
-        static_cast<double>(token_count) / std::max(total_seconds, 1e-9);
-
-    std::cout << "[benchmark] prompt: " << benchmark_prompt << std::endl;
-    std::cout << "[benchmark] LLM: " << tokenizer->Decode(generated_tokens)
-              << std::endl;
-    std::cout << "[benchmark] time_to_first_token=" << ttft_seconds
-              << "s, total_time=" << total_seconds
-              << "s, tokens=" << token_count << ", tokens/s=" << tps
-              << std::endl;
-    return 0;
-  }
-
+  auto producer_thread = model.spawn_producer();
   while (true) {
     std::cout << "User: ";
     std::string user_message;
     std::getline(std::cin, user_message);
 
     std::string user_prompt;
-    if (!prefilled)
+    if (first_message) {
       user_prompt = system_prompt_with_template;
+    }
     user_prompt +=
         BOS + "user\n" + user_message + EOS + "\n" + BOS + "assistant\n";
     const auto tokenized_user_prompt = tokenizer->Encode(user_prompt);
-    auto generation = model.generate(tokenized_user_prompt);
-    auto &generated_tokens = generation.tokens;
-    if (generated_tokens.empty()) {
+    if (!model.append_prompt(tokenized_user_prompt)) {
       std::cout << "LLM: prompt too long, please try again." << std::endl;
       continue;
     }
-    generated_tokens.pop_back();
-    std::cout << "LLM: " << tokenizer->Decode(generated_tokens) << std::endl;
-    if (measure_timing) {
-      const auto seconds =
-          std::chrono::duration_cast<std::chrono::duration<double>>(
-              generation.metrics.total_duration)
-              .count();
-      const auto ttft_seconds =
-          std::chrono::duration_cast<std::chrono::duration<double>>(
-              generation.metrics.time_to_first_token)
-              .count();
-      const auto token_count = generated_tokens.size() + 1;
-      const auto tps =
-          static_cast<double>(token_count) / std::max(seconds, 1e-9);
-      std::cout << "[timing] ttft=" << ttft_seconds << "s, elapsed=" << seconds
-                << "s, tokens=" << token_count << ", tokens/s=" << tps
-                << std::endl;
-    }
+    first_message = false;
+
+    Qwen2Model::StreamResult result;
+    std::string partial_chars;
+    std::cout << "LLM: ";
+    do {
+      result = model.stream_response();
+      if (result.tokens.empty())
+        continue;
+      const auto decoded = partial_chars + tokenizer->Decode(result.tokens);
+      const auto [complete, suffix] = split_partial_suffix(decoded);
+      std::cout << complete << std::flush;
+      partial_chars = suffix;
+    } while (!result.done);
+    std::cout << std::endl;
   }
+  producer_thread.join();
 }

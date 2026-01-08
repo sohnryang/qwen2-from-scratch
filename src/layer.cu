@@ -360,6 +360,9 @@ Tensor<int> Sampler::operator()(LayerContext &ctx,
   CHECK_CUDA(cudaMemcpyAsync(out_storage->data, current_indices->data,
                              sizeof(int), cudaMemcpyDeviceToDevice,
                              ctx.stream()));
+  update_step<<<1, 1, 0, ctx.stream()>>>(
+      ctx.valid_tokens_ptr(), _generated_tokens->data, out_storage->data,
+      _max_sequence_length);
   return {.shape = {static_cast<std::size_t>(1)},
           .dimensions = 1,
           .storage = out_storage};

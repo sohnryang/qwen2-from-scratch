@@ -1,4 +1,5 @@
 #include "layer.h"
+#include "cuda_utils.h"
 #include "tensor.h"
 
 #include <cassert>
@@ -59,32 +60,37 @@ ScratchPadScope::ScratchPadScope(ScratchPad &scratchpad)
 LayerContext::~LayerContext() {
   if (_stream)
     CHECK_CUDA(cudaStreamDestroy(_stream));
-  if (_last_token_index)
-    CHECK_CUDA(cudaFree(_last_token_index));
+  if (_valid_tokens_ptr)
+    CHECK_CUDA(cudaFree(_valid_tokens_ptr));
 }
 
 LayerContext::LayerContext(std::size_t scratchpad_size)
     : _scratchpad{scratchpad_size} {
   CHECK_CUDA(cudaStreamCreate(&_stream));
-  CHECK_CUDA(cudaMalloc(&_last_token_index, sizeof(int)));
+  CHECK_CUDA(cudaMalloc(&_valid_tokens_ptr, sizeof(int)));
 }
 
 LayerContext::LayerContext(LayerContext &&other) noexcept
     : _scratchpad{std::move(other._scratchpad)},
       _stream{std::exchange(other._stream, nullptr)},
-      _last_token_index{std::exchange(other._last_token_index, nullptr)} {}
+      _valid_tokens_ptr{std::exchange(other._valid_tokens_ptr, nullptr)} {}
 
 LayerContext &LayerContext::operator=(LayerContext &&other) noexcept {
   if (this == &other)
     return *this;
   if (_stream)
     CHECK_CUDA(cudaStreamDestroy(_stream));
-  if (_last_token_index)
-    CHECK_CUDA(cudaFree(_last_token_index));
+  if (_valid_tokens_ptr)
+    CHECK_CUDA(cudaFree(_valid_tokens_ptr));
   _scratchpad = std::move(other._scratchpad);
   _stream = std::exchange(other._stream, nullptr);
-  _last_token_index = std::exchange(other._last_token_index, nullptr);
+  _valid_tokens_ptr = std::exchange(other._valid_tokens_ptr, nullptr);
   return *this;
+}
+
+void LayerContext::set_valid_tokens(int valid_tokens) {
+  CHECK_CUDA(cudaMemcpyAsync(_valid_tokens_ptr, &valid_tokens, sizeof(int),
+                             cudaMemcpyHostToDevice, _stream));
 }
 
 InOutBuffer::~InOutBuffer() {
@@ -211,9 +217,11 @@ Embedding::from_parameter(const Tensor<__nv_bfloat16> &embedding_table) {
   return embedding;
 }
 
-Sampler::Sampler(std::size_t vocab_size)
-    : _vocab_size{vocab_size}, _vals_storage{}, _vals_storage_next{},
-      _indices_storage{}, _indices_storage_next{} {}
+Sampler::Sampler(std::size_t vocab_size, std::size_t max_sequence_length)
+    : _vocab_size{vocab_size}, _max_sequence_length{max_sequence_length},
+      _vals_storage{}, _vals_storage_next{}, _indices_storage{},
+      _indices_storage_next{},
+      _generated_tokens(std::make_shared<Storage<int>>(_max_sequence_length)) {}
 
 LmHeadDense::LmHeadDense(std::size_t in_features, std::size_t out_features)
     : _in_features{in_features}, _out_features{out_features},

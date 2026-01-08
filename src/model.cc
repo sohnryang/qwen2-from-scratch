@@ -4,11 +4,13 @@
 #include "tensor.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <format>
+#include <iterator>
 #include <memory>
+#include <thread>
 #include <vector>
 
 Qwen2Model::Qwen2Model(
@@ -28,6 +30,11 @@ Qwen2Model::Qwen2Model(
                               _max_sequence_length;
                      }) &&
          "max sequence length mismatch");
+  CHECK_CUDA(cudaMallocHost(&_published_tokens_ptr, sizeof(int)));
+  CHECK_CUDA(cudaMallocHost(&_published_tokens_buf,
+                            _max_sequence_length * sizeof(int)));
+  CHECK_CUDA(cudaEventCreate(&_publish_event));
+  CHECK_CUDA(cudaStreamCreate(&_copy_stream));
 }
 
 Qwen2Model Qwen2Model::from_parameters(
@@ -100,51 +107,100 @@ Qwen2Model Qwen2Model::from_parameters(
   const auto rmsnorm = RMSNorm::from_parameter(rmsnorm_weight, 1e-6);
 
   const auto lm_head = LmHeadDense::from_parameters(embedding_weight);
-  const auto sampler = Sampler(lm_head.out_features());
+  const auto sampler = Sampler(lm_head.out_features(), max_sequence_length);
   return Qwen2Model(embedding_layer, transformer_blocks, rmsnorm, lm_head,
                     sampler, scratchpad_size, iobuf_size, eos_token);
 }
 
-GenerationResult Qwen2Model::generate(const std::vector<int> &user_prompt) {
-  int next_token;
-  const auto prev_cached_tokens = _cached_tokens;
-  auto model_input = Tensor{.shape = {user_prompt.size()},
-                            .dimensions = 1,
-                            .storage = _iobuf->make_input_storage(user_prompt)};
-  GenerationResult result;
-  auto &generated_tokens = result.tokens;
-  const auto start = std::chrono::steady_clock::now();
-  do {
-    if (_cached_tokens + model_input.elems() > _max_sequence_length) {
-      _cached_tokens = prev_cached_tokens;
+std::thread Qwen2Model::spawn_producer() {
+  return std::thread([&] {
+    while (true) {
+      _prompt_ready.wait(false, std::memory_order_acquire);
+      _prompt_ready.store(false, std::memory_order_release);
+      _stop_generating.store(false, std::memory_order_release);
+
+      auto model_input =
+          Tensor{.shape = {_appended_prompt.size()},
+                 .dimensions = 1,
+                 .storage = _iobuf->make_input_storage(_appended_prompt)};
+      std::size_t response_token_index = 0;
+      const auto streamed_tokens =
+          _streamed_tokens.load(std::memory_order_acquire);
+      _layer_ctx.set_valid_tokens(streamed_tokens);
+      while (!_stop_generating.load(std::memory_order_acquire)) {
+        if (streamed_tokens + response_token_index < _max_sequence_length) {
+          const auto embedding_out =
+              _embedding_layer(_layer_ctx, model_input, _iobuf);
+          auto blocks_out = embedding_out;
+          for (auto &block : _transformer_blocks)
+            blocks_out = block(_layer_ctx, blocks_out, _iobuf);
+          const auto rmsnorm_out = _rmsnorm(_layer_ctx, blocks_out, _iobuf);
+          const auto lm_head_out = _lm_head(_layer_ctx, rmsnorm_out, _iobuf);
+          const auto sampler_out = _sampler(_layer_ctx, lm_head_out, _iobuf);
+          model_input = sampler_out;
+          response_token_index++;
+        }
+        if (_publish_available.load(std::memory_order_acquire)) {
+          CHECK_CUDA(cudaMemcpyAsync(
+              _published_tokens_ptr, _layer_ctx.valid_tokens_ptr(), sizeof(int),
+              cudaMemcpyDeviceToHost, _layer_ctx.stream()));
+          CHECK_CUDA(cudaEventRecord(_publish_event, _layer_ctx.stream()));
+          _published.store(true, std::memory_order_release);
+          _publish_available.store(false, std::memory_order_release);
+          _published.notify_one();
+        }
+      }
       for (auto &block : _transformer_blocks)
-        block.rollback(prev_cached_tokens);
-      const auto elapsed = std::chrono::steady_clock::now() - start;
-      result.metrics.time_to_first_token = elapsed;
-      result.metrics.total_duration = elapsed;
-      return result;
+        block.rollback(_streamed_tokens.load(std::memory_order_acquire));
     }
-    _cached_tokens += model_input.elems();
+  });
+}
 
-    const auto embedding_out =
-        _embedding_layer(_layer_ctx, model_input, _iobuf);
-    auto blocks_out = embedding_out;
-    for (auto &block : _transformer_blocks)
-      blocks_out = block(_layer_ctx, blocks_out, _iobuf);
-    const auto rmsnorm_out = _rmsnorm(_layer_ctx, blocks_out, _iobuf);
-    const auto lm_head_out = _lm_head(_layer_ctx, rmsnorm_out, _iobuf);
-    const auto sampler_out = _sampler(_layer_ctx, lm_head_out, _iobuf);
+bool Qwen2Model::append_prompt(const std::vector<int> &prompt) {
+  if (prompt.size() + _streamed_tokens.load(std::memory_order_acquire) >=
+      _max_sequence_length)
+    return false;
 
-    CHECK_CUDA(cudaStreamSynchronize(_layer_ctx.stream()));
-    CHECK_CUDA(cudaMemcpy(&next_token, sampler_out.storage->data, sizeof(int),
-                          cudaMemcpyDeviceToHost));
-    generated_tokens.push_back(next_token);
-    if (result.metrics.time_to_first_token ==
-        std::chrono::steady_clock::duration{})
-      result.metrics.time_to_first_token =
-          std::chrono::steady_clock::now() - start;
-    model_input = sampler_out;
-  } while (next_token != _eos_token);
-  result.metrics.total_duration = std::chrono::steady_clock::now() - start;
-  return result;
+  _appended_prompt = prompt;
+  _streamed_tokens.fetch_add(prompt.size(), std::memory_order_acq_rel);
+  _prompt_ready.store(true, std::memory_order_release);
+  _prompt_ready.notify_one();
+  return true;
+}
+
+Qwen2Model::StreamResult Qwen2Model::stream_response() {
+  _published.wait(false, std::memory_order_acquire);
+  CHECK_CUDA(cudaStreamWaitEvent(_copy_stream, _publish_event));
+
+  const auto streamed_tokens = _streamed_tokens.load(std::memory_order_acquire);
+  int new_tokens = *_published_tokens_ptr - streamed_tokens;
+  std::vector<int> tokens;
+  auto done = false;
+  if (new_tokens >= 0) {
+    tokens.resize(new_tokens);
+    CHECK_CUDA(cudaMemcpyAsync(
+        _published_tokens_buf + streamed_tokens,
+        _sampler.generated_tokens()->data + streamed_tokens,
+        new_tokens * sizeof(int), cudaMemcpyDeviceToHost, _copy_stream));
+    CHECK_CUDA(cudaStreamSynchronize(_copy_stream));
+    std::copy_n(_published_tokens_buf + streamed_tokens, new_tokens,
+                tokens.begin());
+    const auto eos_it = std::find(tokens.begin(), tokens.end(), _eos_token);
+    if (eos_it != tokens.end()) {
+      const auto generated_length = std::distance(tokens.begin(), eos_it) + 1;
+      tokens.resize(generated_length);
+      done = true;
+    } else if (*_published_tokens_ptr == _max_sequence_length - 1)
+      done = true;
+    _streamed_tokens.fetch_add(tokens.size(), std::memory_order_acq_rel);
+    if (done) {
+      _stop_generating.store(true, std::memory_order_release);
+      _stop_generating.notify_one();
+    }
+  }
+
+  _published.store(false, std::memory_order_release);
+  _publish_available.store(true, std::memory_order_release);
+  _publish_available.notify_one();
+  return {tokens, done};
 }

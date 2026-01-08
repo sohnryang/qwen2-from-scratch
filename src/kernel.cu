@@ -469,13 +469,13 @@ __global__ void rmsnorm(__nv_bfloat16 *__restrict__ out,
                                           factor * __bfloat162float(weight[i]));
 }
 
-__global__ void step(int *last_token_index, int *is_stopped,
-                     std::size_t max_sequence_length) {
+__global__ void update_step(int *__restrict__ valid_tokens_ptr,
+                            int *__restrict__ tokens_buffer,
+                            const int *__restrict__ out_buffer,
+                            std::size_t max_sequence_length) {
   if (blockIdx.x != 0 || threadIdx.x != 0)
     return;
-  if (atomicAdd(is_stopped, 0) == 1)
+  if (atomicAdd(valid_tokens_ptr, 0) == max_sequence_length)
     return;
-  const int next_index = atomicAdd(last_token_index, 1) + 1;
-  if (next_index >= static_cast<int>(max_sequence_length))
-    atomicExch(is_stopped, 1);
+  tokens_buffer[atomicAdd(valid_tokens_ptr, 1)] = *out_buffer;
 }
