@@ -4,23 +4,12 @@
 #include "tensor.h"
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <map>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-
-struct GenerationMetrics {
-  std::chrono::steady_clock::duration time_to_first_token{};
-  std::chrono::steady_clock::duration total_duration{};
-};
-
-struct GenerationResult {
-  std::vector<int> tokens;
-  GenerationMetrics metrics;
-};
 
 class Qwen2Model {
 public:
