@@ -176,6 +176,7 @@ Qwen2Model::StreamResult Qwen2Model::stream_response() {
   int new_tokens = *_published_tokens_ptr - streamed_tokens;
   std::vector<int> tokens;
   auto done = false;
+  auto out_of_space = false;
   if (new_tokens >= 0) {
     tokens.resize(new_tokens);
     CHECK_CUDA(cudaMemcpyAsync(
@@ -190,8 +191,8 @@ Qwen2Model::StreamResult Qwen2Model::stream_response() {
       const auto generated_length = std::distance(tokens.begin(), eos_it) + 1;
       tokens.resize(generated_length);
       done = true;
-    } else if (*_published_tokens_ptr == _max_sequence_length - 1)
-      done = true;
+    } else if (*_published_tokens_ptr >= _max_sequence_length)
+      out_of_space = true;
     _streamed_tokens.fetch_add(tokens.size(), std::memory_order_acq_rel);
     if (done) {
       _stop_generating.store(true, std::memory_order_release);
@@ -202,5 +203,5 @@ Qwen2Model::StreamResult Qwen2Model::stream_response() {
   _published.store(false, std::memory_order_release);
   _publish_available.store(true, std::memory_order_release);
   _publish_available.notify_one();
-  return {tokens, done};
+  return {tokens, done, out_of_space};
 }

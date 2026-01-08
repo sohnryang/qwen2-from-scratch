@@ -27,6 +27,7 @@ public:
   struct StreamResult {
     std::vector<int> tokens;
     bool done;
+    bool out_of_space;
   };
 
 private:

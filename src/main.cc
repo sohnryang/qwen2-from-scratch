@@ -162,6 +162,10 @@ int main(int argc, char **argv) {
     std::cout << "LLM: ";
     do {
       result = model.stream_response();
+      if (result.out_of_space) {
+        std::cerr << "Out of context." << std::endl;
+        std::abort();
+      }
       if (result.tokens.empty())
         continue;
       const auto decoded = partial_chars + tokenizer->Decode(result.tokens);
