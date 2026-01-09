@@ -127,7 +127,8 @@ std::thread Qwen2Model::spawn_producer() {
       const auto streamed_tokens =
           _streamed_tokens.load(std::memory_order_acquire);
       _layer_ctx.set_valid_tokens(streamed_tokens);
-      while (!_stop_generating.load(std::memory_order_acquire)) {
+      while (!_stop_generating.load(std::memory_order_acquire) &&
+             !_stop_producer.load(std::memory_order_acquire)) {
         if (streamed_tokens + response_token_index < _max_sequence_length) {
           const auto embedding_out =
               _embedding_layer(_layer_ctx, model_input, _iobuf);
@@ -150,6 +151,8 @@ std::thread Qwen2Model::spawn_producer() {
           _published.notify_one();
         }
       }
+      if (_stop_producer.load(std::memory_order_acquire))
+        return;
       for (auto &block : _transformer_blocks)
         block.rollback(_streamed_tokens.load(std::memory_order_acquire));
     }
@@ -206,4 +209,8 @@ Qwen2Model::StreamResult Qwen2Model::stream_response() {
   _publish_available.store(true, std::memory_order_release);
   _publish_available.notify_one();
   return {tokens, timestamp, done, out_of_space};
+}
+
+void Qwen2Model::quit() {
+  _stop_producer.store(true, std::memory_order_release);
 }

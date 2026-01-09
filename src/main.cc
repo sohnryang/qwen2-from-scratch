@@ -142,31 +142,31 @@ int main(int argc, char **argv) {
   bool first_message = true;
 
   auto producer_thread = model.spawn_producer();
-  while (true) {
-    std::cout << "User: ";
-    std::string user_message;
-    std::getline(std::cin, user_message);
+  auto make_prompt = [&](const std::string &user_message,
+                         bool include_system) -> std::string {
+    std::string prompt;
+    if (include_system)
+      prompt = system_prompt_with_template;
+    prompt += BOS + "user\n" + user_message + EOS + "\n" + BOS + "assistant\n";
+    return prompt;
+  };
 
-    std::string user_prompt;
-    if (first_message) {
-      user_prompt = system_prompt_with_template;
-    }
-    user_prompt +=
-        BOS + "user\n" + user_message + EOS + "\n" + BOS + "assistant\n";
+  auto run_prompt = [&](const std::string &user_prompt, bool print_output,
+                        bool print_timing) -> bool {
     const auto tokenized_user_prompt = tokenizer->Encode(user_prompt);
     const auto start_time = std::chrono::steady_clock::now();
     std::optional<std::chrono::time_point<std::chrono::steady_clock>>
         first_token_timestamp;
     if (!model.append_prompt(tokenized_user_prompt)) {
       std::cout << "LLM: prompt too long, please try again." << std::endl;
-      continue;
+      return false;
     }
-    first_message = false;
 
     Qwen2Model::StreamResult result;
     std::string partial_chars;
     std::size_t generated_tokens = 0;
-    std::cout << "LLM: ";
+    if (print_output)
+      std::cout << "LLM: ";
     do {
       result = model.stream_response();
       if (result.out_of_space) {
@@ -179,17 +179,21 @@ int main(int argc, char **argv) {
       if (!first_token_timestamp)
         first_token_timestamp =
             result.timestamp.value_or(std::chrono::steady_clock::now());
-      const auto decoded = partial_chars + tokenizer->Decode(result.tokens);
-      const auto [complete, suffix] = split_partial_suffix(decoded);
-      std::cout << complete << std::flush;
-      partial_chars = suffix;
+      if (print_output) {
+        const auto decoded = partial_chars + tokenizer->Decode(result.tokens);
+        const auto [complete, suffix] = split_partial_suffix(decoded);
+        std::cout << complete << std::flush;
+        partial_chars = suffix;
+      }
     } while (!result.done);
-    if (measure_timing) {
+    if (print_timing) {
       const auto end_time = std::chrono::steady_clock::now();
-      const auto ttfb_ms =
-          std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(
-              *first_token_timestamp - start_time)
-              .count();
+      const auto ttfb_ms = first_token_timestamp
+                               ? std::chrono::duration_cast<
+                                     std::chrono::duration<double, std::milli>>(
+                                     *first_token_timestamp - start_time)
+                                     .count()
+                               : 0.0;
       const auto generation_s =
           std::chrono::duration_cast<std::chrono::duration<double>>(end_time -
                                                                     start_time)
@@ -198,11 +202,33 @@ int main(int argc, char **argv) {
           generation_s > 0.0
               ? static_cast<double>(generated_tokens) / generation_s
               : 0.0;
-      std::cout << "\n[Timing] TTFT: " << std::fixed << std::setprecision(2)
+      if (print_output)
+        std::cout << "\n";
+      std::cout << "[Timing] TTFT: " << std::fixed << std::setprecision(2)
                 << ttfb_ms << " ms, TPS: " << std::setprecision(2) << tps
                 << " (" << generated_tokens << " tokens)";
     }
     std::cout << std::endl;
+    return true;
+  };
+
+  if (benchmark_mode) {
+    std::cout << "Benchmark prompt: " << benchmark_prompt << std::endl;
+    const auto user_prompt = make_prompt(benchmark_prompt, true);
+    const bool ok = run_prompt(user_prompt, false, true);
+    model.quit();
+    producer_thread.join();
+    return ok ? 0 : 1;
+  }
+
+  while (true) {
+    std::cout << "User: ";
+    std::string user_message;
+    std::getline(std::cin, user_message);
+
+    const auto user_prompt = make_prompt(user_message, first_message);
+    first_message = false;
+    run_prompt(user_prompt, true, measure_timing);
   }
   producer_thread.join();
 }

@@ -47,6 +47,7 @@ private:
   std::atomic<bool> _published = false;
   std::atomic<bool> _stop_generating = false;
   std::atomic<bool> _publish_available = true;
+  std::atomic<bool> _stop_producer = false;
 
 public:
   Qwen2Model(const Embedding &embedding_layer,
@@ -65,4 +66,6 @@ public:
   bool append_prompt(const std::vector<int> &prompt);
 
   StreamResult stream_response();
+
+  void quit();
 };
