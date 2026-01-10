@@ -137,6 +137,7 @@ int main(int argc, char **argv) {
   const auto tokenizer = load_tokenizer(tokenizer_filename);
 
   const std::string BOS = "<|im_start|>", EOS = "<|im_end|>";
+  const int EOS_ID = 151645;
   std::string system_prompt_with_template =
       BOS + "system\n" + system_prompt + EOS + "\n";
   bool first_message = true;
@@ -176,6 +177,8 @@ int main(int argc, char **argv) {
       if (result.tokens.empty())
         continue;
       generated_tokens += result.tokens.size();
+      if (result.tokens.back() == EOS_ID)
+        result.tokens.pop_back();
       if (!first_token_timestamp)
         first_token_timestamp =
             result.timestamp.value_or(std::chrono::steady_clock::now());
