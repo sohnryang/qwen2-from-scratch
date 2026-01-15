@@ -129,6 +129,20 @@ def create_softmax_test_file(data_dir: str):
     )
 
 
+def create_gemv_test_file(data_dir: str):
+    m = 256
+    n = 512
+    mat = (torch.arange(n * m, dtype=torch.int32) % 13 - 6).to(torch.float32)
+    mat = (mat * 0.01).reshape(n, m).to(torch.bfloat16)
+    vec = (torch.arange(m, dtype=torch.int32) % 7 - 3).to(torch.float32)
+    vec = (vec * 0.02).to(torch.bfloat16)
+    out = mat @ vec
+    save_file(
+        {"mat": mat, "vec": vec, "out": out},
+        os.path.join(data_dir, "gemv_test.safetensors"),
+    )
+
+
 def create_transformer_block_test_file(data_dir: str):
     tokenizer = transformers.AutoTokenizer.from_pretrained("Qwen/Qwen2-1.5B-Instruct")
     model = transformers.AutoModelForCausalLM.from_pretrained(
@@ -257,6 +271,7 @@ if __name__ == "__main__":
     create_reshape_test_file(parsed.data_dir)
     create_rmsnorm_test_file(parsed.data_dir)
     create_softmax_test_file(parsed.data_dir)
+    create_gemv_test_file(parsed.data_dir)
     create_transformer_block_test_file(parsed.data_dir)
     create_embedding_test_file(parsed.data_dir)
     create_sampler_test_file(parsed.data_dir)

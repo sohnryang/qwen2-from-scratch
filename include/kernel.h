@@ -35,6 +35,10 @@ void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
                  const Tensor<__nv_bfloat16> &bias, __nv_bfloat16 scale,
                  bool transpose_second = false);
 
+void launch_gemv(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &mat,
+                 const Tensor<__nv_bfloat16> &vec, int block_dim_x,
+                 int block_dim_y);
+
 template <typename T>
 __global__ void square_sum_reduce(float *__restrict__ out,
                                   const T *__restrict__ x, std::size_t n);

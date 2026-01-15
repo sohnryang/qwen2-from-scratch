@@ -88,6 +88,18 @@ void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
   }
 }
 
+void launch_gemv(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &mat,
+                 const Tensor<__nv_bfloat16> &vec, int block_dim_x,
+                 int block_dim_y) {
+  const auto m = vec.shape[0];
+  const auto n = mat.shape[0];
+  const dim3 threads_per_block(block_dim_x, block_dim_y);
+  const dim3 num_blocks(1, n / threads_per_block.y);
+  gemv_transposed<<<num_blocks, threads_per_block,
+                    sizeof(float) * threads_per_block.y * 32>>>(
+      out.storage->data, mat.storage->data, vec.storage->data, m, n);
+}
+
 __device__ __forceinline__ static float
 warp_reduce_sum(float sum, unsigned int num_threads) {
   if (num_threads >= 32)

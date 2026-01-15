@@ -102,3 +102,26 @@ TEST(KernelTest, Softmax) {
     EXPECT_NEAR(__bfloat162float(actual_host_data[i]),
                 __bfloat162float(expected_host_data[i]), 1e-3);
 }
+
+TEST(KernelTest, Gemv) {
+  auto tensors = load_from_safetensors(std::string(TEST_DATA_DIR) +
+                                       "/gemv_test.safetensors");
+  const auto &mat = tensors.at("mat");
+  const auto &vec = tensors.at("vec");
+  const auto &expected_out = tensors.at("out");
+
+  auto storage = std::make_shared<Storage<__nv_bfloat16>>(mat.shape[0]);
+  Tensor<__nv_bfloat16> actual_out{
+      .shape = {mat.shape[0]}, .dimensions = 1, .storage = storage};
+
+  launch_gemv(actual_out, mat, vec, 32, 4);
+
+  auto actual_host_data = actual_out.storage->to_host();
+  auto expected_host_data = expected_out.storage->to_host();
+
+  ASSERT_EQ(actual_host_data.size(), expected_host_data.size());
+  for (size_t i = 0; i < actual_host_data.size(); ++i) {
+    EXPECT_NEAR(__bfloat162float(actual_host_data[i]),
+                __bfloat162float(expected_host_data[i]), 2e-2);
+  }
+}
