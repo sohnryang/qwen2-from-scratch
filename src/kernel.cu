@@ -125,7 +125,7 @@ __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
   const auto row = blockIdx.y * blockDim.y + threadIdx.y;
   if (row >= n)
     return;
-  float sum = bias ? __bfloat162float(bias[row]) : 0.0f;
+  float sum = 0.0f;
   const auto tid = threadIdx.x;
   assert(m % blockDim.x == 0 && "block x dimension should divide m");
   const auto elems_per_thread = m / blockDim.x;
@@ -176,8 +176,11 @@ __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
 
   sum = warp_reduce_sum(sum, blockDim.x);
   if (blockDim.x <= 32) {
-    if (tid == 0)
+    if (tid == 0) {
+      if (bias)
+        sum += __bfloat162float(bias[row]);
       out[row] = __float2bfloat16(sum);
+    }
     return;
   }
 
@@ -193,8 +196,11 @@ __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
             : 0.0f;
   if (warp_id == 0)
     sum = warp_reduce_sum(sum, blockDim.x / 32);
-  if (tid == 0)
+  if (tid == 0) {
+    if (bias)
+      sum += __bfloat162float(bias[row]);
     out[row] = __float2bfloat16(sum);
+  }
 }
 
 template <typename T>
