@@ -97,7 +97,7 @@ void launch_gemv(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &mat,
   const dim3 num_blocks(1, n / threads_per_block.y);
   gemv_transposed<<<num_blocks, threads_per_block,
                     sizeof(float) * threads_per_block.y * 32>>>(
-      out.storage->data, mat.storage->data, vec.storage->data, m, n);
+      out.storage->data, mat.storage->data, vec.storage->data, nullptr, m, n);
 }
 
 __device__ __forceinline__ static float
@@ -118,13 +118,14 @@ warp_reduce_sum(float sum, unsigned int num_threads) {
 __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
                                 const __nv_bfloat16 *__restrict__ mat,
                                 const __nv_bfloat16 *__restrict__ vec,
+                                const __nv_bfloat16 *__restrict__ bias,
                                 std::size_t m, std::size_t n) {
   assert(blockDim.y <= 1024 && "block y dimension should not exceed 1024");
   assert(m % 8 == 0 && "m should be a multiple of 8");
-  float sum = 0.0f;
   const auto row = blockIdx.y * blockDim.y + threadIdx.y;
   if (row >= n)
     return;
+  float sum = bias ? __bfloat162float(bias[row]) : 0.0f;
   const auto tid = threadIdx.x;
   assert(m % blockDim.x == 0 && "block x dimension should divide m");
   const auto elems_per_thread = m / blockDim.x;

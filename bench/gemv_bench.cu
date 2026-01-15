@@ -91,7 +91,7 @@ static void gemv_using_fastgemv(benchmark::State &state) {
     CHECK_CUDA(cudaEventRecord(start_event));
     gemv_transposed<<<num_blocks, threads_per_block,
                       sizeof(float) * threads_per_block.y * 32>>>(
-        out_storage.data, mat_storage.data, vec_storage.data, m, n);
+        out_storage.data, mat_storage.data, vec_storage.data, nullptr, m, n);
     CHECK_CUDA(cudaEventRecord(stop_event));
     CHECK_CUDA(cudaEventSynchronize(stop_event));
     float elapsed_ms = 0.0f;
