@@ -62,6 +62,8 @@ BENCHMARK(gemv_using_gemm)
     ->Args({4096, 4096})
     ->Args({256, 1536})
     ->Args({1536, 1536})
+    ->Args({1536, 8960})
+    ->Args({8960, 1536})
     ->UseManualTime();
 
 static void gemv_using_fastgemv(benchmark::State &state) {
@@ -113,6 +115,8 @@ BENCHMARK(gemv_using_fastgemv)
     ->Args({4096, 4096, 128, 8})
     ->Args({256, 1536, 32, 4})
     ->Args({1536, 1536, 32, 4})
+    ->Args({1536, 8960, 32, 4})
+    ->Args({8960, 1536, 32, 4})
     ->UseManualTime();
 
 BENCHMARK_MAIN();
