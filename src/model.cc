@@ -111,7 +111,8 @@ Qwen2Model Qwen2Model::from_parameters(
   const auto rmsnorm_weight = weights.at("model.norm.weight");
   const auto rmsnorm = RMSNorm::from_parameter(rmsnorm_weight, 1e-6);
 
-  const auto lm_head = LmHeadDense::from_parameters(embedding_weight);
+  const auto lm_head =
+      LmHeadDense::from_parameters(embedding_weight, dim3(32, 4));
   const auto sampler = Sampler(lm_head.out_features(), max_sequence_length);
   return Qwen2Model(embedding_layer, transformer_blocks, rmsnorm, lm_head,
                     sampler, scratchpad_size, iobuf_size, eos_token);
