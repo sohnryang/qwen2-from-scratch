@@ -27,6 +27,13 @@ FetchContent_Declare(
   URL https://github.com/simdjson/simdjson/archive/refs/tags/v4.0.7.zip)
 FetchContent_MakeAvailable(simdjson)
 
+# google benchmark
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Disable benchmark tests" FORCE)
+FetchContent_Declare(
+  benchmark
+  URL https://github.com/google/benchmark/archive/refs/tags/v1.9.4.zip)
+FetchContent_MakeAvailable(benchmark)
+
 # tokenizers-cpp
 FetchContent_Declare(
   tokenizers-cpp
@@ -59,3 +66,7 @@ target_compile_definitions(
   unit_tests PRIVATE "TEST_DATA_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/data\"")
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
+
+# Benchmarks
+add_executable(bench_gemv bench/gemv_bench.cu)
+target_link_libraries(bench_gemv PRIVATE benchmark::benchmark qwen2kern)
