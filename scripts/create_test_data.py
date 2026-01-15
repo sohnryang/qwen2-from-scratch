@@ -137,8 +137,19 @@ def create_gemv_test_file(data_dir: str):
     vec = (torch.arange(m, dtype=torch.int32) % 7 - 3).to(torch.float32)
     vec = (vec * 0.02).to(torch.bfloat16)
     out = mat @ vec
+    bias = (torch.arange(n, dtype=torch.int32) % 9 - 4).to(torch.float32)
+    bias = (bias * 0.05).to(torch.bfloat16)
+    out_bias = out + bias
+    out_bias_act = nn.functional.silu(out_bias.to(torch.float32)).to(torch.bfloat16)
     save_file(
-        {"mat": mat, "vec": vec, "out": out},
+        {
+            "mat": mat,
+            "vec": vec,
+            "out": out,
+            "bias": bias,
+            "out_bias": out_bias,
+            "out_bias_act": out_bias_act,
+        },
         os.path.join(data_dir, "gemv_test.safetensors"),
     )
 
