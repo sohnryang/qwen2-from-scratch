@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 
@@ -43,6 +44,10 @@ __global__ void gemm_transposed(__nv_bfloat16 *__restrict__ out,
   out[row * n + col] = __float2bfloat16(res);
 }
 
+__device__ __forceinline__ float silu(float x) {
+  return x / (1.0f + __expf(-x));
+}
+
 __global__ void dense(__nv_bfloat16 *__restrict__ out,
                       const __nv_bfloat16 *__restrict__ x,
                       const __nv_bfloat16 *__restrict__ weight,
@@ -57,7 +62,7 @@ __global__ void dense(__nv_bfloat16 *__restrict__ out,
   for (int i = 0; i < in_features; i++)
     res += __bfloat162float(x[row * in_features + i]) *
            __bfloat162float(weight[col * in_features + i]);
-  out[row * out_features + col] = __float2bfloat16(res / (1.0f + __expf(-res)));
+  out[row * out_features + col] = __float2bfloat16(silu(res));
 }
 
 void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
@@ -89,15 +94,17 @@ void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
 }
 
 void launch_gemv(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &mat,
-                 const Tensor<__nv_bfloat16> &vec, int block_dim_x,
-                 int block_dim_y) {
+                 const Tensor<__nv_bfloat16> &vec,
+                 const std::optional<Tensor<__nv_bfloat16>> &bias,
+                 int block_dim_x, int block_dim_y, bool use_activation) {
   const auto m = vec.shape[0];
   const auto n = mat.shape[0];
   const dim3 threads_per_block(block_dim_x, block_dim_y);
   const dim3 num_blocks(1, n / threads_per_block.y);
   gemv_transposed<<<num_blocks, threads_per_block,
                     sizeof(float) * threads_per_block.y * 32>>>(
-      out.storage->data, mat.storage->data, vec.storage->data, nullptr, m, n);
+      out.storage->data, mat.storage->data, vec.storage->data,
+      bias ? bias->storage->data : nullptr, m, n, use_activation);
 }
 
 __device__ __forceinline__ static float
@@ -119,7 +126,8 @@ __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
                                 const __nv_bfloat16 *__restrict__ mat,
                                 const __nv_bfloat16 *__restrict__ vec,
                                 const __nv_bfloat16 *__restrict__ bias,
-                                std::size_t m, std::size_t n) {
+                                std::size_t m, std::size_t n,
+                                bool use_activation) {
   assert(blockDim.y <= 1024 && "block y dimension should not exceed 1024");
   assert(m % 8 == 0 && "m should be a multiple of 8");
   const auto row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -179,6 +187,8 @@ __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
     if (tid == 0) {
       if (bias)
         sum += __bfloat162float(bias[row]);
+      if (use_activation)
+        sum = silu(sum);
       out[row] = __float2bfloat16(sum);
     }
     return;
@@ -199,6 +209,8 @@ __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
   if (tid == 0) {
     if (bias)
       sum += __bfloat162float(bias[row]);
+    if (use_activation)
+      sum = silu(sum);
     out[row] = __float2bfloat16(sum);
   }
 }

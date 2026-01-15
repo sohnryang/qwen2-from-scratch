@@ -3,6 +3,8 @@
 #include "tensor.h"
 
 #include <cstddef>
+#include <optional>
+
 #include <cuda_bf16.h>
 
 __global__ void gemm(__nv_bfloat16 *__restrict__ out,
@@ -29,7 +31,8 @@ __global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
                                 const __nv_bfloat16 *__restrict__ mat,
                                 const __nv_bfloat16 *__restrict__ vec,
                                 const __nv_bfloat16 *__restrict__ bias,
-                                std::size_t m, std::size_t n);
+                                std::size_t m, std::size_t n,
+                                bool use_activation);
 
 void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
                  const Tensor<__nv_bfloat16> &in_b,
@@ -37,8 +40,9 @@ void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
                  bool transpose_second = false);
 
 void launch_gemv(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &mat,
-                 const Tensor<__nv_bfloat16> &vec, int block_dim_x,
-                 int block_dim_y);
+                 const Tensor<__nv_bfloat16> &vec,
+                 const std::optional<Tensor<__nv_bfloat16>> &bias,
+                 int block_dim_x, int block_dim_y, bool use_activation);
 
 template <typename T>
 __global__ void square_sum_reduce(float *__restrict__ out,
