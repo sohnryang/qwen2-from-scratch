@@ -230,17 +230,20 @@ Sampler::Sampler(std::size_t vocab_size, std::size_t max_sequence_length)
       _indices_storage_next{},
       _generated_tokens(std::make_shared<Storage<int>>(_max_sequence_length)) {}
 
-LmHeadDense::LmHeadDense(std::size_t in_features, std::size_t out_features)
+LmHeadDense::LmHeadDense(std::size_t in_features, std::size_t out_features,
+                         std::optional<dim3> gemv_block_dim)
     : _in_features{in_features}, _out_features{out_features},
       _weight{.shape = {_out_features, _in_features},
               .dimensions = 2,
               .storage = std::make_shared<Storage<__nv_bfloat16>>(
-                  _out_features * _in_features)} {}
+                  _out_features * _in_features)},
+      _gemv_block_dim{gemv_block_dim} {}
 
-LmHeadDense LmHeadDense::from_parameters(const Tensor<__nv_bfloat16> &weight) {
+LmHeadDense LmHeadDense::from_parameters(const Tensor<__nv_bfloat16> &weight,
+                                         std::optional<dim3> gemv_block_dim) {
   assert(weight.dimensions == 2 && "invalid weight dimension");
   const auto in_features = weight.shape[1], out_features = weight.shape[0];
-  LmHeadDense dense(in_features, out_features);
+  LmHeadDense dense(in_features, out_features, gemv_block_dim);
   dense._weight = weight;
   return dense;
 }

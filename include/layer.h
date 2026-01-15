@@ -289,14 +289,17 @@ private:
   std::size_t _in_features;
   std::size_t _out_features;
   Tensor<__nv_bfloat16> _weight;
+  std::optional<dim3> _gemv_block_dim;
 
 public:
-  LmHeadDense(std::size_t in_features, std::size_t out_features);
+  LmHeadDense(std::size_t in_features, std::size_t out_features,
+              std::optional<dim3> gemv_block_dim = {});
 
   std::size_t in_features() const { return _in_features; }
   std::size_t out_features() const { return _out_features; }
 
-  static LmHeadDense from_parameters(const Tensor<__nv_bfloat16> &weight);
+  static LmHeadDense from_parameters(const Tensor<__nv_bfloat16> &weight,
+                                     std::optional<dim3> gemv_block_dim = {});
 
   Tensor<__nv_bfloat16>
   operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,

@@ -395,8 +395,15 @@ LmHeadDense::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
     out_storage = iobuf->output_for<__nv_bfloat16>(input, _out_features);
   else
     out_storage = scratchpad.make_storage<__nv_bfloat16>(_out_features);
-  gemm_transposed<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
-      out_storage->data, last_token, _weight.storage->data, nullptr, 1.0f, 1,
-      _out_features, _in_features);
+  if (_gemv_block_dim)
+    gemv_transposed<<<dim3(1, _out_features / _gemv_block_dim->y),
+                      *_gemv_block_dim, sizeof(float) * _gemv_block_dim->y * 32,
+                      ctx.stream()>>>(out_storage->data, _weight.storage->data,
+                                      last_token, nullptr, _in_features,
+                                      _out_features, false);
+  else
+    gemm_transposed<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
+        out_storage->data, last_token, _weight.storage->data, nullptr, 1.0f, 1,
+        _out_features, _in_features);
   return {.shape = {_out_features}, .dimensions = 1, .storage = out_storage};
 }
