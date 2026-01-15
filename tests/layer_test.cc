@@ -77,6 +77,41 @@ TEST(LayerTest, DenseWithActivation) {
   assert_tensors_equal(actual_out, expected_out);
 }
 
+TEST(LayerTest, DenseBatchSizeOneNoActivation) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "gemv_test.safetensors").string());
+  const auto &input = tensors.at("vec");
+  const auto &weight = tensors.at("mat");
+  const auto &expected_out = tensors.at("out");
+
+  Dense dense_layer =
+      Dense::from_parameters(weight, false, 0, dim3(32, 4));
+
+  LayerContext ctx(1);
+  Tensor<__nv_bfloat16> actual_out = dense_layer(ctx, input);
+
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
+  assert_tensors_near(actual_out, expected_out);
+}
+
+TEST(LayerTest, DenseBatchSizeOneBiasActivation) {
+  auto tensors = load_from_safetensors(
+      (fs::path(TEST_DATA_DIR) / "gemv_test.safetensors").string());
+  const auto &input = tensors.at("vec");
+  const auto &weight = tensors.at("mat");
+  const auto &bias = tensors.at("bias");
+  const auto &expected_out = tensors.at("out_bias_act");
+
+  Dense dense_layer =
+      Dense::from_parameters(weight, bias, true, 0, dim3(32, 4));
+
+  LayerContext ctx(1);
+  Tensor<__nv_bfloat16> actual_out = dense_layer(ctx, input);
+
+  CHECK_CUDA(cudaStreamSynchronize(ctx.stream()));
+  assert_tensors_near(actual_out, expected_out);
+}
+
 TEST(LayerTest, DenseCache) {
   auto tensors = load_from_safetensors(
       (fs::path(TEST_DATA_DIR) / "dense_cache_test.safetensors").string());
