@@ -25,6 +25,11 @@ __global__ void dense(__nv_bfloat16 *__restrict__ out,
                       const __nv_bfloat16 *__restrict__ bias, std::size_t n,
                       std::size_t in_features, std::size_t out_features);
 
+__global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
+                                const __nv_bfloat16 *__restrict__ mat,
+                                const __nv_bfloat16 *__restrict__ vec,
+                                std::size_t m, std::size_t n);
+
 void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
                  const Tensor<__nv_bfloat16> &in_b,
                  const Tensor<__nv_bfloat16> &bias, __nv_bfloat16 scale,

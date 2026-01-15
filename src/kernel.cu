@@ -2,6 +2,7 @@
 #include "kernel.h"
 #include "tensor.h"
 
+#include <assert.h>
 #include <cstddef>
 #include <stdexcept>
 #include <type_traits>
@@ -85,6 +86,102 @@ void launch_gemm(Tensor<__nv_bfloat16> &out, const Tensor<__nv_bfloat16> &in_a,
         out.storage->data, in_a.storage->data, in_b.storage->data,
         bias.storage->data, scale, m, n, k);
   }
+}
+
+__device__ __forceinline__ static float
+warp_reduce_sum(float sum, unsigned int num_threads) {
+  if (num_threads >= 32)
+    sum += __shfl_down_sync(0xffffffff, sum, 16);
+  if (num_threads >= 16)
+    sum += __shfl_down_sync(0xffffffff, sum, 8);
+  if (num_threads >= 8)
+    sum += __shfl_down_sync(0xffffffff, sum, 4);
+  if (num_threads >= 4)
+    sum += __shfl_down_sync(0xffffffff, sum, 2);
+  if (num_threads >= 2)
+    sum += __shfl_down_sync(0xffffffff, sum, 1);
+  return sum;
+}
+
+__global__ void gemv_transposed(__nv_bfloat16 *__restrict__ out,
+                                const __nv_bfloat16 *__restrict__ mat,
+                                const __nv_bfloat16 *__restrict__ vec,
+                                std::size_t m, std::size_t n) {
+  assert(blockDim.y <= 1024 && "block y dimension should not exceed 1024");
+  assert(m % 8 == 0 && "m should be a multiple of 8");
+  float sum = 0.0f;
+  const auto row = blockIdx.y * blockDim.y + threadIdx.y;
+  if (row >= n)
+    return;
+  const auto tid = threadIdx.x;
+  assert(m % blockDim.x == 0 && "block x dimension should divide m");
+  const auto elems_per_thread = m / blockDim.x;
+  assert(elems_per_thread % 8 == 0 &&
+         "elems_per_thread should be a multiple of 8");
+
+#pragma unroll
+  for (int i = 0; i < elems_per_thread / 8; i++) {
+    const auto vec_idx = tid + i * blockDim.x;
+    if (vec_idx >= m / 8)
+      break;
+    const float4 vec_fragment = reinterpret_cast<const float4 *>(vec)[vec_idx];
+    const float4 mat_fragment =
+        reinterpret_cast<const float4 *>(mat)[row * m / 8 + vec_idx];
+    const __nv_bfloat162 vec_fragment0 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&vec_fragment.w);
+    const __nv_bfloat162 vec_fragment1 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&vec_fragment.x);
+    const __nv_bfloat162 vec_fragment2 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&vec_fragment.y);
+    const __nv_bfloat162 vec_fragment3 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&vec_fragment.z);
+    const __nv_bfloat162 mat_fragment0 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&mat_fragment.w);
+    const __nv_bfloat162 mat_fragment1 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&mat_fragment.x);
+    const __nv_bfloat162 mat_fragment2 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&mat_fragment.y);
+    const __nv_bfloat162 mat_fragment3 =
+        *reinterpret_cast<const __nv_bfloat162 *>(&mat_fragment.z);
+    sum +=
+        __bfloat162float(vec_fragment0.x) * __bfloat162float(mat_fragment0.x);
+    sum +=
+        __bfloat162float(vec_fragment0.y) * __bfloat162float(mat_fragment0.y);
+    sum +=
+        __bfloat162float(vec_fragment1.x) * __bfloat162float(mat_fragment1.x);
+    sum +=
+        __bfloat162float(vec_fragment1.y) * __bfloat162float(mat_fragment1.y);
+    sum +=
+        __bfloat162float(vec_fragment2.x) * __bfloat162float(mat_fragment2.x);
+    sum +=
+        __bfloat162float(vec_fragment2.y) * __bfloat162float(mat_fragment2.y);
+    sum +=
+        __bfloat162float(vec_fragment3.x) * __bfloat162float(mat_fragment3.x);
+    sum +=
+        __bfloat162float(vec_fragment3.y) * __bfloat162float(mat_fragment3.y);
+  }
+
+  sum = warp_reduce_sum(sum, blockDim.x);
+  if (blockDim.x <= 32) {
+    if (tid == 0)
+      out[row] = __float2bfloat16(sum);
+    return;
+  }
+
+  extern __shared__ float warp_level_sum[];
+  const auto lane_id = threadIdx.x % 32;
+  const auto warp_id = threadIdx.x / 32;
+  if (lane_id == 0)
+    warp_level_sum[threadIdx.y * 32 + warp_id] = sum;
+  __syncthreads();
+
+  sum = threadIdx.x < blockDim.x / 32
+            ? warp_level_sum[threadIdx.y * 32 + lane_id]
+            : 0.0f;
+  if (warp_id == 0)
+    sum = warp_reduce_sum(sum, blockDim.x / 32);
+  if (tid == 0)
+    out[row] = __float2bfloat16(sum);
 }
 
 template <typename T>
