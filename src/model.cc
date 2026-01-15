@@ -65,17 +65,19 @@ Qwen2Model Qwen2Model::from_parameters(
 
     const auto q_weight = weights.at(key_prefix + ".self_attn.q_proj.weight");
     const auto q_bias = weights.at(key_prefix + ".self_attn.q_proj.bias");
-    const auto q_layer = Dense::from_parameters(q_weight, q_bias, false);
+    const auto q_layer =
+        Dense::from_parameters(q_weight, q_bias, false, 0, dim3(32, 4));
     const auto k_weight = weights.at(key_prefix + ".self_attn.k_proj.weight");
     const auto k_bias = weights.at(key_prefix + ".self_attn.k_proj.bias");
-    const auto k_layer =
-        Dense::from_parameters(k_weight, k_bias, false, max_sequence_length);
+    const auto k_layer = Dense::from_parameters(
+        k_weight, k_bias, false, max_sequence_length, dim3(32, 4));
     const auto v_weight = weights.at(key_prefix + ".self_attn.v_proj.weight");
     const auto v_bias = weights.at(key_prefix + ".self_attn.v_proj.bias");
-    const auto v_layer =
-        Dense::from_parameters(v_weight, v_bias, false, max_sequence_length);
+    const auto v_layer = Dense::from_parameters(
+        v_weight, v_bias, false, max_sequence_length, dim3(32, 4));
     const auto o_weight = weights.at(key_prefix + ".self_attn.o_proj.weight");
-    const auto o_layer = Dense::from_parameters(o_weight, false);
+    const auto o_layer =
+        Dense::from_parameters(o_weight, false, 0, dim3(32, 4));
 
     const auto post_attention_layernorm_weight =
         weights.at(key_prefix + ".post_attention_layernorm.weight");
@@ -87,12 +89,15 @@ Qwen2Model Qwen2Model::from_parameters(
 
     const auto gate_proj_weight =
         weights.at(key_prefix + ".mlp.gate_proj.weight");
-    const auto gate_proj = Dense::from_parameters(gate_proj_weight, true);
+    const auto gate_proj =
+        Dense::from_parameters(gate_proj_weight, true, 0, dim3(32, 4));
     const auto up_proj_weight = weights.at(key_prefix + ".mlp.up_proj.weight");
-    const auto up_proj = Dense::from_parameters(up_proj_weight, false);
+    const auto up_proj =
+        Dense::from_parameters(up_proj_weight, false, 0, dim3(32, 4));
     const auto down_proj_weight =
         weights.at(key_prefix + ".mlp.down_proj.weight");
-    const auto down_proj = Dense::from_parameters(down_proj_weight, false);
+    const auto down_proj =
+        Dense::from_parameters(down_proj_weight, false, 0, dim3(32, 4));
 
     transformer_blocks.emplace_back(input_layernorm, attention_layer,
                                     post_attention_layernorm, gate_proj,
