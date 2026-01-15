@@ -32,7 +32,14 @@ Dense::operator()(LayerContext &ctx, const Tensor<__nv_bfloat16> &input,
   } else
     _cached_batches += batches;
 
-  if (_use_activation)
+  if (batches == 1 && _gemv_block_dim)
+    gemv_transposed<<<dim3(1, _out_features / _gemv_block_dim->y),
+                      *_gemv_block_dim, sizeof(float) * _gemv_block_dim->y * 32,
+                      ctx.stream()>>>(
+        out_storage->data + out_offset, _weight.storage->data,
+        input.storage->data, _bias ? _bias->storage->data : nullptr,
+        _in_features, _out_features, _use_activation);
+  else if (_use_activation)
     dense<<<num_blocks, threads_per_block, 0, ctx.stream()>>>(
         out_storage->data + out_offset, input.storage->data,
         _weight.storage->data, _bias ? _bias->storage->data : nullptr, batches,

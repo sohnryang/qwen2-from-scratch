@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include <cuda_bf16.h>
@@ -114,7 +115,8 @@ InOutBuffer::InOutBuffer(std::size_t size) : _size{size} {
 }
 
 Dense::Dense(std::size_t in_features, std::size_t out_features,
-             bool use_activation, std::size_t cache_size)
+             bool use_activation, std::size_t cache_size,
+             std::optional<dim3> gemv_block_dim)
     : _in_features{in_features}, _out_features{out_features},
       _use_activation{use_activation},
       _weight{.shape = {_out_features, _in_features},
@@ -122,26 +124,31 @@ Dense::Dense(std::size_t in_features, std::size_t out_features,
               .storage = std::make_shared<Storage<__nv_bfloat16>>(
                   _in_features * _out_features)},
       _bias{}, _cache{std::make_shared<Storage<__nv_bfloat16>>(_out_features *
-                                                               cache_size)} {}
+                                                               cache_size)},
+      _gemv_block_dim{gemv_block_dim} {}
 
 Dense Dense::from_parameters(const Tensor<__nv_bfloat16> &weight,
-                             bool use_activation, std::size_t cache_size) {
+                             bool use_activation, std::size_t cache_size,
+                             std::optional<dim3> gemv_block_dim) {
   assert(weight.dimensions == 2 && "invalid weight dimension");
   const auto in_features = weight.shape[1], out_features = weight.shape[0];
-  Dense dense(in_features, out_features, use_activation, cache_size);
+  Dense dense(in_features, out_features, use_activation, cache_size,
+              gemv_block_dim);
   dense._weight = weight;
   return dense;
 }
 
 Dense Dense::from_parameters(const Tensor<__nv_bfloat16> &weight,
                              const Tensor<__nv_bfloat16> &bias,
-                             bool use_activation, std::size_t cache_size) {
+                             bool use_activation, std::size_t cache_size,
+                             std::optional<dim3> gemv_block_dim) {
   assert(weight.dimensions == 2 && "invalid weight dimension");
   assert(bias.dimensions == 1 && "invalid bias dimension");
   assert(weight.shape[0] == bias.shape[0] && "weight and bias shape mismatch");
   const auto in_features = weight.shape[1], out_features = weight.shape[0];
 
-  Dense dense(in_features, out_features, use_activation, cache_size);
+  Dense dense(in_features, out_features, use_activation, cache_size,
+              gemv_block_dim);
   dense._weight = weight;
   dense._bias = bias;
   return dense;
