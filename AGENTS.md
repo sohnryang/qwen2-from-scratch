@@ -46,6 +46,6 @@
 - Run `ctest --test-dir build` before pushing; aim to keep runtime GPU-friendly (small tensors, short runs).
 
 ## Commit & Pull Request Guidelines
-- Commit messages follow a conventional style seen in history (e.g., `feat(model): ...`, `test(layer): ...`, `build:`); keep them scoped and imperative.
+- Commit messages are prefixed with the modified component(s) only, not conventional-commit types (e.g., `tensor: ...`, `layer, model: ...`); keep them scoped and imperative. Older history uses conventional commits (`feat(model): ...`) — do not follow that style for new commits.
 - Keep commits focused (one logical change each) and include rationale in the body if behavior shifts.
 - Pull requests should describe intent, list key changes, note test results (`ctest` output), and link issues when applicable. CLI log snippets beat screenshots for verification.
