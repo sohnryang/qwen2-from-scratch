@@ -1,5 +1,5 @@
-#include "tensor.h"
 #include "cuda_utils.h"
+#include "tensor.h"
 
 #include <algorithm>
 #include <array>
@@ -82,7 +82,7 @@ template class Storage<int>;
 
 template <typename T>
 Tensor<T> Tensor<T>::reshape(std::vector<int> new_shape) const {
-  assert(new_shape.size() <= 4 && "invalid dimension");
+  assert(new_shape.size() <= shape.size() && "invalid dimension");
   assert(std::count(new_shape.begin(), new_shape.end(), -1) <= 1 &&
          "too many unknowns");
   std::size_t elems_per_unknown_axis = 1;
@@ -155,7 +155,7 @@ load_from_safetensors(const std::string &filename) {
             buf.data(), offsets_arr[0], offsets_arr[1])));
 
     simdjson::dom::array shape = specs["shape"].get_array();
-    if (shape.size() > 4)
+    if (shape.size() > Tensor<__nv_bfloat16>::MAX_RANK)
       throw std::runtime_error("dimension too large");
     Tensor tensor = {.dimensions = shape.size(), .storage = storage};
     for (auto [i, elem] : std::views::enumerate(shape))

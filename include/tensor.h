@@ -32,7 +32,9 @@ template <typename T> struct Storage {
 };
 
 template <typename T> struct Tensor {
-  std::array<std::size_t, 4> shape = {0};
+  static constexpr std::size_t MAX_RANK = 8;
+
+  std::array<std::size_t, MAX_RANK> shape = {0};
   std::size_t dimensions = 0;
   std::shared_ptr<Storage<T>> storage;
 
